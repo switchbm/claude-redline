@@ -124,20 +124,24 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="request_human_review",
             description=(
-                "Request human review of a markdown document. "
-                "Opens a browser interface where the user can highlight text "
-                "and add comments. Returns structured feedback."
+                "REQUIRED: Request human review via browser interface. "
+                "MUST be called in these situations: "
+                "1. BEFORE implementing - when proposing an implementation plan, present the plan for review "
+                "2. AFTER completing a phase - when providing a detailed walkthrough/summary, present it for review. "
+                "Opens a browser where the user can highlight text and add comments. "
+                "Returns structured feedback as JSON with all user comments and highlighted sections. "
+                "This blocks execution until the user submits their review."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "markdown_spec": {
                         "type": "string",
-                        "description": "The markdown document to review"
+                        "description": "The markdown document to review (implementation plan, phase summary, technical spec, etc.)"
                     },
                     "context": {
                         "type": "string",
-                        "description": "Additional context about what to review"
+                        "description": "What to review. Examples: 'Implementation plan for feature X', 'Phase 1 completion summary', 'Architecture decision'"
                     }
                 },
                 "required": ["markdown_spec"]
