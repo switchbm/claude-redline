@@ -4,12 +4,27 @@ version = "0.1.0"
 description = "A Human-in-the-Loop (HITL) review interface for the Model Context Protocol (MCP)"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
+keywords = ["mcp", "claude", "human-in-the-loop", "review", "ai"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
     "mcp>=1.0.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "python-multipart>=0.0.9",
 ]
+
+[project.urls]
+Homepage = "https://github.com/switchbm/claude-redline"
+Repository = "https://github.com/switchbm/claude-redline"
+Issues = "https://github.com/switchbm/claude-redline/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -31,8 +46,19 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/redline"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"src/redline/static" = "redline/static"
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/redline/**",
+    "README.md",
+]
+
+[tool.hatch.build]
+artifacts = [
+    "src/redline/static/**",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

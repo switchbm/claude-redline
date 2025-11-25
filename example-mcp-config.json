@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "redline": {
-      "command": "uv",
-      "args": ["run", "redline"],
-      "cwd": "/path/to/claude-redline"
-    }
-  }
-}
