@@ -13,7 +13,10 @@ from redline.server import (
     call_tool,
     get_config,
     get_content,
+    get_diff,
+    get_file,
     list_tools,
+    parse_git_diff,
     run_http_server,
     start_http_server_if_needed,
     submit_review,
@@ -38,6 +41,8 @@ def reset_app_state() -> None:
     app_state["content"] = ""
     app_state["future"] = None
     app_state["theme"] = DEFAULT_THEME_NAME
+    app_state["base_dir"] = None
+    app_state["diff_data"] = {}
 
 
 class TestThemes:
@@ -340,4 +345,255 @@ class TestEdgeCases:
         """Test that app_state has the correct structure."""
         assert "content" in app_state
         assert "future" in app_state
+        assert "base_dir" in app_state
+        assert "diff_data" in app_state
         assert isinstance(app_state["content"], str)
+
+
+class TestFileEndpoint:
+    """Tests for the /api/file endpoint."""
+
+    def test_get_file_not_found(self, client: TestClient) -> None:
+        """Test getting a file that doesn't exist."""
+        import tempfile
+        import os
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app_state["base_dir"] = tmpdir
+            response = client.get("/api/file?path=nonexistent.py")
+            assert response.status_code == 404
+            assert "not found" in response.json()["error"].lower()
+
+    def test_get_file_success(self, client: TestClient) -> None:
+        """Test getting a file successfully."""
+        import tempfile
+        import os
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app_state["base_dir"] = tmpdir
+            # Create a test file
+            test_file = os.path.join(tmpdir, "test.py")
+            with open(test_file, "w") as f:
+                f.write("print('hello')\n")
+
+            response = client.get("/api/file?path=test.py")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["content"] == "print('hello')\n"
+            assert data["language"] == "python"
+            assert data["lines"] == 1
+            assert data["path"] == "test.py"
+
+    def test_get_file_path_outside_base_dir(self, client: TestClient) -> None:
+        """Test that accessing files outside base_dir is forbidden."""
+        import tempfile
+        import os
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app_state["base_dir"] = tmpdir
+            # Try to access parent directory
+            response = client.get("/api/file?path=../../../etc/passwd")
+            assert response.status_code == 403
+            assert "outside base directory" in response.json()["error"].lower()
+
+    def test_get_file_binary(self, client: TestClient) -> None:
+        """Test getting a binary file returns error."""
+        import tempfile
+        import os
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app_state["base_dir"] = tmpdir
+            # Create a binary file
+            test_file = os.path.join(tmpdir, "test.bin")
+            with open(test_file, "wb") as f:
+                f.write(b"\x00\x01\x02\xff\xfe")
+
+            response = client.get("/api/file?path=test.bin")
+            assert response.status_code == 400
+            assert "binary" in response.json()["error"].lower()
+
+    def test_get_file_not_a_file(self, client: TestClient) -> None:
+        """Test getting a directory returns error."""
+        import tempfile
+        import os
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app_state["base_dir"] = tmpdir
+            # Create a subdirectory
+            subdir = os.path.join(tmpdir, "subdir")
+            os.makedirs(subdir)
+
+            response = client.get("/api/file?path=subdir")
+            assert response.status_code == 400
+            assert "not a file" in response.json()["error"].lower()
+
+    def test_get_file_language_detection(self, client: TestClient) -> None:
+        """Test language detection from file extensions."""
+        import tempfile
+        import os
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app_state["base_dir"] = tmpdir
+
+            test_cases = [
+                ("test.ts", "typescript"),
+                ("test.tsx", "tsx"),
+                ("test.js", "javascript"),
+                ("test.rs", "rust"),
+                ("test.go", "go"),
+                ("test.unknown", "text"),
+            ]
+
+            for filename, expected_lang in test_cases:
+                test_file = os.path.join(tmpdir, filename)
+                with open(test_file, "w") as f:
+                    f.write("// code\n")
+
+                response = client.get(f"/api/file?path={filename}")
+                assert response.status_code == 200
+                assert response.json()["language"] == expected_lang
+
+    async def test_get_file_no_base_dir_uses_cwd(self) -> None:
+        """Test that get_file uses cwd when base_dir is None."""
+        import os
+
+        app_state["base_dir"] = None
+        # This should use os.getcwd() as the base directory
+        result = await get_file("nonexistent_file_12345.py")
+        assert result.status_code == 404
+
+
+class TestDiffEndpoint:
+    """Tests for the /api/diff endpoint."""
+
+    def test_get_diff_empty(self, client: TestClient) -> None:
+        """Test getting diff when no diff data exists."""
+        response = client.get("/api/diff")
+        assert response.status_code == 200
+        assert response.json() == {"diff": {}}
+
+    def test_get_diff_with_data(self, client: TestClient) -> None:
+        """Test getting diff when diff data exists."""
+        app_state["diff_data"] = {
+            "src/test.py": {
+                "added_lines": [10, 11, 12],
+                "removed_lines": [5],
+            }
+        }
+        response = client.get("/api/diff")
+        assert response.status_code == 200
+        data = response.json()
+        assert "src/test.py" in data["diff"]
+        assert data["diff"]["src/test.py"]["added_lines"] == [10, 11, 12]
+
+    async def test_get_diff_returns_json_response(self) -> None:
+        """Test that get_diff returns proper JSONResponse."""
+        result = await get_diff()
+        assert hasattr(result, "status_code")
+        assert result.status_code == 200
+
+
+class TestParseGitDiff:
+    """Tests for the parse_git_diff function."""
+
+    def test_parse_git_diff_no_git_repo(self) -> None:
+        """Test parsing diff in a non-git directory."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = parse_git_diff(tmpdir)
+            # Should return empty dict, not raise
+            assert result == {}
+
+    def test_parse_git_diff_with_mock(self) -> None:
+        """Test parsing a mocked git diff output."""
+        mock_diff = """diff --git a/src/test.py b/src/test.py
+index abc123..def456 100644
+--- a/src/test.py
++++ b/src/test.py
+@@ -1,3 +2,5 @@
+ unchanged line
++added line 1
++added line 2
+ another unchanged
+-removed line
+ final line
+"""
+        with patch("redline.server.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout=mock_diff,
+                stderr=""
+            )
+
+            result = parse_git_diff("/some/path")
+
+            assert "src/test.py" in result
+            # Line 3 and 4 are added (after @@ +2,5 and counting)
+            assert 3 in result["src/test.py"]["added_lines"]
+            assert 4 in result["src/test.py"]["added_lines"]
+
+    def test_parse_git_diff_timeout(self) -> None:
+        """Test handling of git diff timeout."""
+        import subprocess
+
+        with patch("redline.server.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired("git", 30)
+
+            result = parse_git_diff("/some/path")
+            assert result == {}
+
+    def test_parse_git_diff_error(self) -> None:
+        """Test handling of git diff error."""
+        with patch("redline.server.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=1,
+                stdout="",
+                stderr="fatal: not a git repository"
+            )
+
+            result = parse_git_diff("/some/path")
+            assert result == {}
+
+
+class TestMCPToolsWithBaseDir:
+    """Tests for MCP tool functionality with base_dir parameter."""
+
+    @patch("redline.server.webbrowser.open")
+    @patch("redline.server.start_http_server_if_needed")
+    @patch("redline.server.parse_git_diff")
+    async def test_call_tool_sets_base_dir(
+        self,
+        mock_parse_diff: MagicMock,
+        mock_start_server: MagicMock,
+        mock_browser: MagicMock
+    ) -> None:
+        """Test that call_tool sets base_dir correctly."""
+        mock_parse_diff.return_value = {"test.py": {"added_lines": [1], "removed_lines": []}}
+
+        async def run_tool() -> Any:
+            return await call_tool(
+                "request_human_review",
+                {
+                    "markdown_spec": "# Test",
+                    "base_dir": "/custom/path",
+                },
+            )
+
+        task = asyncio.create_task(run_tool())
+        await asyncio.sleep(0.05)
+
+        # Verify base_dir was set
+        assert app_state["base_dir"] == "/custom/path"
+
+        # Verify parse_git_diff was called with base_dir
+        mock_parse_diff.assert_called_once_with("/custom/path")
+
+        # Verify diff_data was set
+        assert app_state["diff_data"] == {"test.py": {"added_lines": [1], "removed_lines": []}}
+
+        # Clean up
+        future = app_state.get("future")
+        if future and not future.done():
+            future.set_result({"comments": [], "user_overall_comment": "LGTM"})
+        await task

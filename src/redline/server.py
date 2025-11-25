@@ -274,11 +274,8 @@ def parse_git_diff(base_dir: str) -> dict[str, dict[str, list[int]]]:
                 for part in parts:
                     if part.startswith("+") and "," in part:
                         current_line_new = int(part[1:].split(",")[0])
-                    elif part.startswith("+"):
-                        try:
-                            current_line_new = int(part[1:])
-                        except ValueError:
-                            pass
+                    elif part.startswith("+") and part[1:].isdigit():
+                        current_line_new = int(part[1:])
 
             # Added line
             elif line.startswith("+") and not line.startswith("+++"):
