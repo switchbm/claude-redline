@@ -90,6 +90,10 @@ module = "mcp.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["uvicorn", "uvicorn.*", "fastapi", "fastapi.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "redline.server"
 disable_error_code = ["misc", "no-untyped-call"]
 

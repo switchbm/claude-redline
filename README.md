@@ -61,6 +61,7 @@ Claude: → Continues to Phase 2...
 - **Inline Comments** — Detailed feedback directly on the document
 - **Structured Feedback** — Returns JSON that Claude can act on
 - **Zero Config** — Works immediately with Claude Desktop and Claude Code
+- **Customizable Themes** — 6 built-in themes with easy extensibility
 
 ---
 
@@ -125,7 +126,61 @@ Add to your config file:
 ```
 </details>
 
-### 3. Use It
+### 3. Choose a Theme (Optional)
+
+Redline includes 6 built-in themes. Add `--theme <name>` to customize the look:
+
+| Theme | Description |
+|-------|-------------|
+| `default` | Clean professional blue/gray (default) |
+| `dark` | Modern dark mode for low-light environments |
+| `forest` | Nature-inspired with earthy green tones |
+| `ocean` | Calm oceanic with blue and teal accents |
+| `sunset` | Warm sunset with orange and amber tones |
+| `minimal` | Ultra-clean with subtle contrasts |
+
+<details>
+<summary><strong>Example: Dark Theme with Claude Code</strong></summary>
+
+```bash
+claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline","--theme","dark"]}'
+```
+
+Or in `.mcp.json`:
+```json
+{
+  "mcpServers": {
+    "redline": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline", "--theme", "dark"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>Example: Ocean Theme with Claude Desktop</strong></summary>
+
+```json
+{
+  "mcpServers": {
+    "redline": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline", "--theme", "ocean"]
+    }
+  }
+}
+```
+</details>
+
+**List available themes:**
+```bash
+uvx --from git+https://github.com/switchbm/claude-redline redline --list-themes
+```
+
+### 4. Use It
 
 Tell Claude to present plans and summaries for review:
 
@@ -293,6 +348,7 @@ python build_ui.py
 
 ## Roadmap
 
+- [x] Customizable UI themes
 - [ ] Custom port configuration
 - [ ] Multiple concurrent reviews
 - [ ] Review history persistence

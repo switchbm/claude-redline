@@ -76,10 +76,10 @@ function App() {
       const escapedQuote = comment.quote.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const regex = new RegExp(`(${escapedQuote})`, 'g')
 
-      // Wrap the quote with a special marker
+      // Wrap the quote with a special marker using theme highlight class
       highlightedContent = highlightedContent.replace(
         regex,
-        `<mark class="bg-yellow-200 cursor-pointer" data-comment-id="${comment.id}" title="Click to view comment">$1</mark>`
+        `<mark class="theme-highlight cursor-pointer" data-comment-id="${comment.id}" title="Click to view comment">$1</mark>`
       )
     })
 
@@ -271,12 +271,30 @@ function App() {
 
   if (submitted) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: 'var(--bg-page)' }}
+      >
         <div className="text-center">
-          <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Review Submitted</h1>
-          <p className="text-gray-600">Your feedback has been sent to the AI agent.</p>
-          <p className="text-sm text-gray-500 mt-2">You can close this window.</p>
+          <CheckCircle
+            className="w-16 h-16 mx-auto mb-4"
+            style={{ color: 'var(--accent-success)' }}
+          />
+          <h1
+            className="text-2xl font-bold mb-2"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            Review Submitted
+          </h1>
+          <p style={{ color: 'var(--text-secondary)' }}>
+            Your feedback has been sent to the AI agent.
+          </p>
+          <p
+            className="text-sm mt-2"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            You can close this window.
+          </p>
         </div>
       </div>
     )
@@ -284,35 +302,68 @@ function App() {
 
   if (loading || !content) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: 'var(--bg-page)' }}
+      >
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Waiting for content...</p>
+          <div
+            className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4"
+            style={{ borderColor: 'var(--accent-primary)' }}
+          />
+          <p style={{ color: 'var(--text-secondary)' }}>Waiting for content...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div
+      className="min-h-screen"
+      style={{ backgroundColor: 'var(--bg-page)' }}
+    >
       {/* Header */}
-      <div className="sticky top-0 bg-white border-b border-gray-200 shadow-sm z-10">
+      <div
+        className="sticky top-0 border-b z-10"
+        style={{
+          backgroundColor: 'var(--bg-card)',
+          borderColor: 'var(--border-default)',
+          boxShadow: 'var(--shadow-sm)'
+        }}
+      >
         <div className="max-w-4xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Document Review</h1>
-              <p className="text-sm text-gray-600 mt-1">
+              <h1
+                className="text-2xl font-bold"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Document Review
+              </h1>
+              <p
+                className="text-sm mt-1"
+                style={{ color: 'var(--text-secondary)' }}
+              >
                 Select text to add comments
               </p>
             </div>
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div
+                className="flex items-center gap-2 text-sm"
+                style={{ color: 'var(--text-secondary)' }}
+              >
                 <MessageSquare className="w-4 h-4" />
                 <span>{comments.length} {comments.length === 1 ? 'comment' : 'comments'}</span>
               </div>
               <button
                 onClick={handleSubmit}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors bg-blue-600 text-white hover:bg-blue-700"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors"
+                style={{
+                  backgroundColor: 'var(--accent-primary)',
+                  color: 'var(--text-inverse)'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover)'}
+                onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
               >
                 <Send className="w-4 h-4" />
                 Submit Review
@@ -327,14 +378,20 @@ function App() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Markdown Content */}
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow-sm p-8 prose prose-lg">
+            <div
+              className="rounded-lg p-8 prose prose-lg"
+              style={{
+                backgroundColor: 'var(--bg-card)',
+                boxShadow: 'var(--shadow-sm)'
+              }}
+            >
               <ReactMarkdown
                 components={{
                   // Allow mark elements for highlighting
                   mark: ({ children, ...props }) => (
                     <mark
                       {...props}
-                      className="bg-yellow-200 px-1 rounded cursor-pointer hover:bg-yellow-300 transition-colors"
+                      className="px-1 rounded cursor-pointer transition-colors theme-highlight"
                     >
                       {children}
                     </mark>
@@ -348,10 +405,24 @@ function App() {
 
           {/* Comments Sidebar */}
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow-sm p-6 sticky top-24">
-              <h2 className="text-lg font-bold text-gray-900 mb-4">Comments</h2>
+            <div
+              className="rounded-lg p-6 sticky top-24"
+              style={{
+                backgroundColor: 'var(--bg-card)',
+                boxShadow: 'var(--shadow-sm)'
+              }}
+            >
+              <h2
+                className="text-lg font-bold mb-4"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Comments
+              </h2>
               {comments.length === 0 ? (
-                <p className="text-sm text-gray-500 italic">
+                <p
+                  className="text-sm italic"
+                  style={{ color: 'var(--text-muted)' }}
+                >
                   No comments yet. Select text to add one.
                 </p>
               ) : (
@@ -359,34 +430,61 @@ function App() {
                   {comments.map((comment, index) => (
                     <div
                       key={comment.id}
-                      className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                      className="border rounded-lg p-4 transition-shadow hover:shadow-md"
+                      style={{ borderColor: 'var(--border-default)' }}
                     >
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center gap-2">
-                          <MessageSquare className="w-4 h-4 text-blue-600" />
-                          <span className="text-xs text-gray-400">#{index + 1}</span>
+                          <MessageSquare
+                            className="w-4 h-4"
+                            style={{ color: 'var(--accent-primary)' }}
+                          />
+                          <span
+                            className="text-xs"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            #{index + 1}
+                          </span>
                         </div>
                         <div className="flex gap-1">
                           <button
                             onClick={() => handleEditComment(comment)}
-                            className="text-gray-400 hover:text-blue-600 transition-colors"
+                            className="transition-colors"
+                            style={{ color: 'var(--text-muted)' }}
+                            onMouseOver={(e) => e.currentTarget.style.color = 'var(--accent-primary)'}
+                            onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
                             title="Edit comment"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteComment(comment.id)}
-                            className="text-gray-400 hover:text-red-600 transition-colors"
+                            className="transition-colors"
+                            style={{ color: 'var(--text-muted)' }}
+                            onMouseOver={(e) => e.currentTarget.style.color = 'var(--accent-error)'}
+                            onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
                             title="Delete comment"
                           >
                             <X className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
-                      <blockquote className="text-sm text-gray-600 italic border-l-2 border-yellow-400 pl-3 mb-2 bg-yellow-50 py-1 rounded">
+                      <blockquote
+                        className="text-sm italic border-l-2 pl-3 mb-2 py-1 rounded"
+                        style={{
+                          color: 'var(--text-secondary)',
+                          borderColor: 'var(--accent-warning)',
+                          backgroundColor: 'var(--bg-highlight)'
+                        }}
+                      >
                         "{comment.quote}"
                       </blockquote>
-                      <p className="text-sm text-gray-900">{comment.user_comment}</p>
+                      <p
+                        className="text-sm"
+                        style={{ color: 'var(--text-primary)' }}
+                      >
+                        {comment.user_comment}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -400,17 +498,29 @@ function App() {
       {showPopover && (
         <div
           ref={popoverRef}
-          className="fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 p-4 w-80"
+          className="fixed z-50 rounded-lg border p-4 w-80"
           style={{
             top: `${popoverPosition.top}px`,
-            left: `${popoverPosition.left - 160}px`, // Center the popover
+            left: `${popoverPosition.left - 160}px`,
+            backgroundColor: 'var(--bg-card)',
+            borderColor: 'var(--border-default)',
+            boxShadow: 'var(--shadow-lg)'
           }}
         >
           <div className="mb-3">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              className="block text-sm font-medium mb-2"
+              style={{ color: 'var(--text-secondary)' }}
+            >
               {editingCommentId ? 'Edit Comment' : 'Add Comment'}
             </label>
-            <blockquote className="text-xs text-gray-600 italic border-l-2 border-blue-500 pl-2 mb-3 max-h-20 overflow-y-auto">
+            <blockquote
+              className="text-xs italic border-l-2 pl-2 mb-3 max-h-20 overflow-y-auto"
+              style={{
+                color: 'var(--text-secondary)',
+                borderColor: 'var(--accent-primary)'
+              }}
+            >
               "{selectedText}"
             </blockquote>
             <textarea
@@ -419,10 +529,18 @@ function App() {
               onChange={(e) => setCommentText(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Enter your comment..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:border-transparent resize-none"
+              style={{
+                backgroundColor: 'var(--bg-input)',
+                borderColor: 'var(--border-default)',
+                color: 'var(--text-primary)'
+              }}
               rows={3}
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p
+              className="text-xs mt-1"
+              style={{ color: 'var(--text-muted)' }}
+            >
               Press Ctrl+Enter to save, Esc to cancel
             </p>
           </div>
@@ -432,16 +550,34 @@ function App() {
               disabled={!commentText.trim()}
               className={cn(
                 'flex-1 px-3 py-2 rounded-md font-medium text-sm transition-colors',
-                commentText.trim()
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
               )}
+              style={{
+                backgroundColor: commentText.trim() ? 'var(--accent-primary)' : 'var(--border-default)',
+                color: commentText.trim() ? 'var(--text-inverse)' : 'var(--text-muted)',
+                cursor: commentText.trim() ? 'pointer' : 'not-allowed'
+              }}
+              onMouseOver={(e) => {
+                if (commentText.trim()) {
+                  e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover)'
+                }
+              }}
+              onMouseOut={(e) => {
+                if (commentText.trim()) {
+                  e.currentTarget.style.backgroundColor = 'var(--accent-primary)'
+                }
+              }}
             >
               {editingCommentId ? 'Update' : 'Save'}
             </button>
             <button
               onClick={handleCancelEdit}
-              className="px-3 py-2 rounded-md font-medium text-sm bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors"
+              className="px-3 py-2 rounded-md font-medium text-sm transition-colors"
+              style={{
+                backgroundColor: 'var(--bg-card-hover)',
+                color: 'var(--text-secondary)'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--border-default)'}
+              onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'}
             >
               Cancel
             </button>
@@ -451,13 +587,33 @@ function App() {
 
       {/* Submit Modal */}
       {showSubmitModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full p-6">
+        <div
+          className="fixed inset-0 flex items-center justify-center z-50 p-4"
+          style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+        >
+          <div
+            className="rounded-lg max-w-2xl w-full p-6"
+            style={{
+              backgroundColor: 'var(--bg-card)',
+              boxShadow: 'var(--shadow-lg)'
+            }}
+          >
             <div className="flex items-start gap-3 mb-4">
-              <FileText className="w-6 h-6 text-blue-600 mt-1" />
+              <FileText
+                className="w-6 h-6 mt-1"
+                style={{ color: 'var(--accent-primary)' }}
+              />
               <div className="flex-1">
-                <h2 className="text-xl font-bold text-gray-900">Submit Review</h2>
-                <p className="text-sm text-gray-600 mt-1">
+                <h2
+                  className="text-xl font-bold"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  Submit Review
+                </h2>
+                <p
+                  className="text-sm mt-1"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
                   {comments.length > 0
                     ? `You have ${comments.length} inline comment${comments.length === 1 ? '' : 's'}.`
                     : 'No inline comments added.'}
@@ -467,7 +623,10 @@ function App() {
             </div>
 
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                className="block text-sm font-medium mb-2"
+                style={{ color: 'var(--text-secondary)' }}
+              >
                 Overall Comment (Optional)
               </label>
               <textarea
@@ -476,24 +635,44 @@ function App() {
                 onChange={(e) => setOverallComment(e.target.value)}
                 onKeyDown={handleModalKeyDown}
                 placeholder="Add a summary comment about the entire document, or leave blank if everything looks good..."
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent resize-none"
+                style={{
+                  backgroundColor: 'var(--bg-input)',
+                  borderColor: 'var(--border-default)',
+                  color: 'var(--text-primary)'
+                }}
                 rows={5}
               />
-              <p className="text-xs text-gray-500 mt-2">
-                Press Ctrl+Enter to submit • This comment covers the entire review
+              <p
+                className="text-xs mt-2"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Press Ctrl+Enter to submit - This comment covers the entire review
               </p>
             </div>
 
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setShowSubmitModal(false)}
-                className="px-4 py-2 rounded-lg font-medium text-sm bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors"
+                className="px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+                style={{
+                  backgroundColor: 'var(--bg-card-hover)',
+                  color: 'var(--text-secondary)'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--border-default)'}
+                onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'}
               >
                 Cancel
               </button>
               <button
                 onClick={handleFinalSubmit}
-                className="flex items-center gap-2 px-6 py-2 rounded-lg font-medium text-sm bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                className="flex items-center gap-2 px-6 py-2 rounded-lg font-medium text-sm transition-colors"
+                style={{
+                  backgroundColor: 'var(--accent-primary)',
+                  color: 'var(--text-inverse)'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover)'}
+                onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-primary)'}
               >
                 <Send className="w-4 h-4" />
                 {comments.length === 0 && !overallComment.trim()
