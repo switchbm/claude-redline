@@ -56,7 +56,15 @@ async def get_content():
 @app.post("/api/submit")
 async def submit_review(data: dict[str, Any]):
     """Accept the review submission and resolve the future."""
-    logger.info(f"Review submitted with {len(data.get('comments', []))} comments")
+    num_comments = len(data.get('comments', []))
+    overall_comment = data.get('overallComment')
+
+    if num_comments == 0 and not overall_comment:
+        logger.info("Review submitted: Approved with no comments")
+    elif overall_comment:
+        logger.info(f"Review submitted with {num_comments} inline comments and an overall comment")
+    else:
+        logger.info(f"Review submitted with {num_comments} inline comments")
 
     # Resolve the future with the submitted data
     if app_state["future"] and not app_state["future"].done():
