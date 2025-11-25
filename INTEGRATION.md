@@ -67,11 +67,23 @@
 
 ## Step-by-Step Integration
 
-### 1. Install Redline
+### 1. Choose Installation Method
+
+**Option A: No Installation (uvx - Recommended)**
+
+No installation needed! Just configure Claude Desktop to use uvx.
+
+**Option B: Global Install**
 
 ```bash
-cd /path/to/claude-redline
-python build_ui.py
+uv tool install git+https://github.com/switchbm/claude-redline
+```
+
+**Option C: From Source**
+
+```bash
+git clone https://github.com/switchbm/claude-redline.git
+cd claude-redline
 uv sync
 ```
 
@@ -82,7 +94,32 @@ uv sync
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 - **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
-**Add Redline to configuration:**
+**Configuration for Option A (uvx - Recommended):**
+
+```json
+{
+  "mcpServers": {
+    "redline": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline"]
+    }
+  }
+}
+```
+
+**Configuration for Option B (Global Install):**
+
+```json
+{
+  "mcpServers": {
+    "redline": {
+      "command": "redline"
+    }
+  }
+}
+```
+
+**Configuration for Option C (From Source):**
 
 ```json
 {
@@ -96,7 +133,7 @@ uv sync
 }
 ```
 
-⚠️ **Important**: Use the absolute path to your `claude-redline` directory.
+⚠️ **For Option C**: Use the absolute path to your `claude-redline` directory.
 
 ### 3. Restart Claude Desktop
 
@@ -259,11 +296,16 @@ Use Redline in your own MCP clients:
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client, StdioServerParameters
 
-# Configure Redline server
+# Option 1: Using uvx (no installation required)
 redline_params = StdioServerParameters(
-    command="uv",
-    args=["run", "redline"],
-    cwd="/path/to/claude-redline"
+    command="uvx",
+    args=["--from", "git+https://github.com/switchbm/claude-redline", "redline"]
+)
+
+# Option 2: After `uv tool install`
+redline_params = StdioServerParameters(
+    command="redline",
+    args=[]
 )
 
 # Use in your application

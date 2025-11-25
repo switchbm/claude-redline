@@ -1,9 +1,8 @@
 {
   "mcpServers": {
     "redline": {
-      "command": "uv",
-      "args": ["run", "redline"],
-      "cwd": "/path/to/claude-redline"
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline"]
     }
   }
 }
