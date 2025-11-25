@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & Discussions
+    url: https://github.com/switchbm/claude-redline/discussions
+    about: Ask questions and discuss Redline here
+  - name: Documentation
+    url: https://github.com/switchbm/claude-redline#readme
+    about: Check the documentation before opening an issue

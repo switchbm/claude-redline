@@ -1,5 +1,32 @@
 #!/usr/bin/env python3
-"""Redline MCP Server: Human-in-the-Loop review interface."""
+"""Redline MCP Server: Human-in-the-Loop review interface for AI agents.
+
+This module implements an MCP (Model Context Protocol) server that enables
+AI agents like Claude to request human feedback during execution. When the
+`request_human_review` tool is called:
+
+1. The server starts a local HTTP server (FastAPI + Uvicorn) on port 6380
+2. A browser window opens with a React-based review interface
+3. The user can highlight text and add inline comments
+4. Feedback is returned as structured JSON to the AI agent
+
+Architecture:
+    Main thread: Runs the MCP server (stdio communication with Claude)
+    Daemon thread: Runs the HTTP server for the web UI
+    asyncio.Future: Blocks the tool call until user submits review
+
+The threading model ensures the MCP connection stays alive during potentially
+long user review sessions while the browser UI remains responsive.
+
+Example:
+    Configure in Claude Code:
+        claude mcp add redline uvx --from git+https://github.com/switchbm/claude-redline redline
+
+    Or run directly:
+        uvx --from git+https://github.com/switchbm/claude-redline redline
+"""
+
+from __future__ import annotations
 
 import asyncio
 import json
@@ -20,7 +47,10 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 # Global state
@@ -48,13 +78,32 @@ app.add_middleware(
 # API Endpoints
 @app.get("/api/content")
 async def get_content() -> JSONResponse:
-    """Return the current markdown content."""
+    """Return the current markdown content for the review UI.
+
+    The React frontend polls this endpoint to retrieve the markdown
+    document that was submitted for review.
+
+    Returns:
+        JSONResponse with {"content": "<markdown string>"}
+    """
     return JSONResponse({"content": app_state.get("content", "")})
 
 
 @app.post("/api/submit")
 async def submit_review(data: dict[str, Any]) -> JSONResponse:
-    """Accept the review submission and resolve the future."""
+    """Accept the user's review submission and unblock the MCP tool call.
+
+    This endpoint receives the user's feedback from the React UI and resolves
+    the asyncio.Future that the `request_human_review` tool is awaiting.
+
+    Args:
+        data: Review payload containing:
+            - comments: List of inline comments with quote, text, timestamp
+            - user_overall_comment: Optional summary comment
+
+    Returns:
+        JSONResponse with {"status": "ok"}
+    """
     num_comments = len(data.get("comments", []))
     overall_comment = data.get("user_overall_comment")
 
@@ -93,7 +142,11 @@ http_server_started = threading.Event()
 
 
 def run_http_server() -> None:
-    """Run the HTTP server in a daemon thread."""
+    """Run the FastAPI/Uvicorn HTTP server in a daemon thread.
+
+    Binds to 127.0.0.1:6380 (localhost only for security).
+    Sets the http_server_started event when ready to accept connections.
+    """
     try:
         logger.info(f"Starting HTTP server on port {HTTP_PORT}")
         config = uvicorn.Config(
@@ -111,7 +164,11 @@ def run_http_server() -> None:
 
 
 def start_http_server_if_needed() -> None:
-    """Start the HTTP server if not already running."""
+    """Start the HTTP server in a background thread if not already running.
+
+    Creates a daemon thread so the server automatically stops when the
+    main process exits. Waits up to 5 seconds for the server to be ready.
+    """
     global http_server_thread
 
     if http_server_thread is None or not http_server_thread.is_alive():
@@ -130,7 +187,11 @@ mcp_server = Server("redline")
 
 @mcp_server.list_tools()
 async def list_tools() -> list[Tool]:
-    """List available MCP tools."""
+    """Return the list of tools available from this MCP server.
+
+    Returns:
+        List containing the `request_human_review` tool definition.
+    """
     return [
         Tool(
             name="request_human_review",
@@ -163,7 +224,25 @@ async def list_tools() -> list[Tool]:
 
 @mcp_server.call_tool()
 async def call_tool(name: str, arguments: Any) -> list[TextContent]:
-    """Handle tool calls."""
+    """Handle MCP tool invocations from Claude.
+
+    For `request_human_review`:
+    1. Stores the markdown content in global state
+    2. Creates an asyncio.Future to block until user submits
+    3. Starts HTTP server and opens browser
+    4. Waits for user to submit review
+    5. Returns the feedback as JSON
+
+    Args:
+        name: Tool name (must be "request_human_review")
+        arguments: Dict with "markdown_spec" and optional "context"
+
+    Returns:
+        List with single TextContent containing JSON feedback
+
+    Raises:
+        ValueError: If tool name is not recognized
+    """
     if name != "request_human_review":
         raise ValueError(f"Unknown tool: {name}")
 
@@ -203,7 +282,11 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
 
 
 async def async_main() -> None:
-    """Main async entry point for the MCP server."""
+    """Main async entry point for the MCP server.
+
+    Establishes stdio communication with Claude and runs the MCP server
+    until the connection is closed or an error occurs.
+    """
     logger.info("Starting Redline MCP Server")
 
     async with stdio_server() as (read_stream, write_stream):
@@ -213,7 +296,11 @@ async def async_main() -> None:
 
 
 def main() -> None:
-    """Main entry point."""
+    """Main entry point for the Redline MCP server.
+
+    Called when running `redline` from the command line or `uvx redline`.
+    Handles KeyboardInterrupt gracefully and logs any errors.
+    """
     try:
         asyncio.run(async_main())
     except KeyboardInterrupt:
