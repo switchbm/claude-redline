@@ -418,16 +418,25 @@ async def list_tools() -> list[Tool]:
                 "2. AFTER completing a phase - when providing a detailed walkthrough/summary, present it for review. "
                 "Opens a browser where the user can highlight text and add comments. "
                 "Returns structured feedback as JSON with all user comments and highlighted sections. "
-                "This blocks execution until the user submits their review."
+                "This blocks execution until the user submits their review.\n\n"
+                "CODE REFERENCES: When referencing specific code changes, use the format "
+                "[[file:path/to/file.py:42]] for a single line or [[file:path/to/file.py:42-50]] for a range. "
+                "These render as clickable links that open a split-view code viewer with syntax highlighting. "
+                "Lines that are part of the git diff are highlighted green. Always use relative paths from the project root."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "markdown_spec": {
                         "type": "string",
-                        "description": "The markdown document to review (implementation plan, phase summary, technical spec, etc.). "
-                        "Use code references in format [[file:path/to/file.py:42]] or [[file:path/to/file.py:42-50]] "
-                        "to link to specific lines. These become clickable links in the review UI."
+                        "description": (
+                            "The markdown document to review. Use code references [[file:path:line]] "
+                            "to link to specific code. Examples:\n"
+                            "- [[file:src/auth.py:42]] - links to line 42\n"
+                            "- [[file:src/auth.py:42-50]] - links to lines 42-50\n"
+                            "- [[file:README.md]] - links to entire file\n"
+                            "These become clickable buttons that open a code viewer panel."
+                        )
                     },
                     "context": {
                         "type": "string",
