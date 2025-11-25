@@ -145,6 +145,69 @@ Ask Claude: "What MCP tools do you have access to?"
 
 Claude should list `request_human_review` among available tools.
 
+## Claude Code (CLI) Setup
+
+Claude Code uses a different configuration format with explicit `type` field.
+
+### Option 1: CLI Command (Quickest)
+
+```bash
+claude mcp add-json redline '{
+  "type": "stdio",
+  "command": "uvx",
+  "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline"]
+}'
+```
+
+### Option 2: Project Config (Recommended for Teams)
+
+Create `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "redline": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline"]
+    }
+  }
+}
+```
+
+This file can be version-controlled so your whole team gets the MCP server automatically.
+
+### Option 3: User-Level Config
+
+Add to `~/.claude.json` for personal use across all projects:
+
+```json
+{
+  "mcpServers": {
+    "redline": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline"]
+    }
+  }
+}
+```
+
+### Verify Claude Code Setup
+
+```bash
+# List configured MCP servers
+claude mcp list
+
+# Check specific server
+claude mcp get redline
+
+# Within Claude Code session
+/mcp
+```
+
+The `/mcp` command shows connection status - look for "connected" next to redline.
+
 ## How Claude Decides to Use the Tool
 
 Claude Code will automatically use `request_human_review` when:
