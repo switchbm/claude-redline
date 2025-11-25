@@ -28,6 +28,7 @@ Example:
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import logging
@@ -46,6 +47,13 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
+from redline.themes import (
+    DEFAULT_THEME_NAME,
+    get_theme,
+    get_theme_descriptions,
+    list_themes,
+)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -57,6 +65,7 @@ logger = logging.getLogger(__name__)
 app_state: dict[str, Any] = {
     "content": "",
     "future": None,
+    "theme": DEFAULT_THEME_NAME,
 }
 
 # Port configuration
@@ -87,6 +96,24 @@ async def get_content() -> JSONResponse:
         JSONResponse with {"content": "<markdown string>"}
     """
     return JSONResponse({"content": app_state.get("content", "")})
+
+
+@app.get("/api/config")
+async def get_config() -> JSONResponse:
+    """Return the current configuration including theme.
+
+    The React frontend fetches this on startup to get the theme
+    and other configuration settings.
+
+    Returns:
+        JSONResponse with {"theme": ThemeDefinition}
+    """
+    theme_name = app_state.get("theme", DEFAULT_THEME_NAME)
+    theme = get_theme(theme_name)
+    return JSONResponse({
+        "theme": theme,
+        "available_themes": list_themes(),
+    })
 
 
 @app.post("/api/submit")
@@ -295,12 +322,75 @@ async def async_main() -> None:
         )
 
 
+def create_argument_parser() -> argparse.ArgumentParser:
+    """Create the command-line argument parser.
+
+    Returns:
+        Configured ArgumentParser instance
+    """
+    parser = argparse.ArgumentParser(
+        prog="redline",
+        description="Redline MCP Server: Human-in-the-Loop review interface for AI agents",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  uvx redline                     # Use default theme
+  uvx redline --theme dark        # Use dark theme
+  uvx redline --theme ocean       # Use ocean theme
+  uvx redline --list-themes       # Show available themes
+
+Available themes:
+"""
+        + "\n".join(f"  {name}: {desc}" for name, desc in get_theme_descriptions().items()),
+    )
+
+    parser.add_argument(
+        "--theme",
+        "-t",
+        type=str,
+        default=DEFAULT_THEME_NAME,
+        metavar="NAME",
+        help=f"UI theme to use (default: {DEFAULT_THEME_NAME})",
+    )
+
+    parser.add_argument(
+        "--list-themes",
+        action="store_true",
+        help="List available themes and exit",
+    )
+
+    return parser
+
+
 def main() -> None:
     """Main entry point for the Redline MCP server.
 
     Called when running `redline` from the command line or `uvx redline`.
     Handles KeyboardInterrupt gracefully and logs any errors.
+
+    Command-line arguments:
+        --theme, -t NAME: Set the UI theme (default: default)
+        --list-themes: Show available themes and exit
     """
+    parser = create_argument_parser()
+    args = parser.parse_args()
+
+    # Handle --list-themes
+    if args.list_themes:
+        print("Available themes:")
+        for name, desc in sorted(get_theme_descriptions().items()):
+            print(f"  {name}: {desc}")
+        sys.exit(0)
+
+    # Validate and set theme
+    try:
+        get_theme(args.theme)  # Validate theme exists
+        app_state["theme"] = args.theme.lower()
+        logger.info(f"Using theme: {args.theme}")
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
     try:
         asyncio.run(async_main())
     except KeyboardInterrupt:

@@ -5,9 +5,6 @@ This sends a JSON-RPC request to the MCP server to trigger a review.
 """
 
 import json
-import subprocess
-import sys
-import time
 
 
 def send_mcp_request(request):

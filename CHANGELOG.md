@@ -8,7 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Nothing yet
+- **UI Themes**: 6 customizable themes for the review interface
+  - `default` - Clean professional blue/gray (default)
+  - `dark` - Modern dark mode for low-light environments
+  - `forest` - Nature-inspired with earthy green tones
+  - `ocean` - Calm oceanic with blue and teal accents
+  - `sunset` - Warm sunset with orange and amber tones
+  - `minimal` - Ultra-clean with subtle contrasts
+- CLI argument `--theme <name>` to select theme at startup
+- CLI argument `--list-themes` to show available themes
+- `/api/config` endpoint for frontend to fetch theme configuration
+- Extensible theme architecture using CSS custom properties
 
 ## [0.1.0] - 2024-12-01
 

@@ -11,11 +11,18 @@ from redline.server import (
     app,
     app_state,
     call_tool,
+    get_config,
     get_content,
     list_tools,
     run_http_server,
     start_http_server_if_needed,
     submit_review,
+)
+from redline.themes import (
+    DEFAULT_THEME_NAME,
+    get_theme,
+    get_theme_descriptions,
+    list_themes,
 )
 
 
@@ -30,6 +37,101 @@ def reset_app_state() -> None:
     """Reset app state before each test."""
     app_state["content"] = ""
     app_state["future"] = None
+    app_state["theme"] = DEFAULT_THEME_NAME
+
+
+class TestThemes:
+    """Tests for theme functionality."""
+
+    def test_list_themes(self) -> None:
+        """Test listing available themes."""
+        themes = list_themes()
+        assert "default" in themes
+        assert "dark" in themes
+        assert "forest" in themes
+        assert "ocean" in themes
+        assert "sunset" in themes
+        assert "minimal" in themes
+        assert len(themes) == 6
+
+    def test_get_theme_default(self) -> None:
+        """Test getting the default theme."""
+        theme = get_theme("default")
+        assert theme["name"] == "default"
+        assert "description" in theme
+        assert "colors" in theme
+        assert "bg_page" in theme["colors"]
+        assert "accent_primary" in theme["colors"]
+
+    def test_get_theme_dark(self) -> None:
+        """Test getting the dark theme."""
+        theme = get_theme("dark")
+        assert theme["name"] == "dark"
+        assert theme["colors"]["bg_page"] == "#0f172a"
+
+    def test_get_theme_case_insensitive(self) -> None:
+        """Test that theme names are case-insensitive."""
+        theme1 = get_theme("DARK")
+        theme2 = get_theme("Dark")
+        theme3 = get_theme("dark")
+        assert theme1 == theme2 == theme3
+
+    def test_get_theme_invalid(self) -> None:
+        """Test getting an invalid theme raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown theme"):
+            get_theme("nonexistent")
+
+    def test_get_theme_descriptions(self) -> None:
+        """Test getting theme descriptions."""
+        descriptions = get_theme_descriptions()
+        assert len(descriptions) == 6
+        assert "default" in descriptions
+        assert "professional" in descriptions["default"].lower()
+
+    def test_all_themes_have_required_colors(self) -> None:
+        """Test that all themes have all required color keys."""
+        required_colors = [
+            "bg_page", "bg_card", "bg_card_hover", "bg_input", "bg_code",
+            "bg_highlight", "bg_highlight_hover", "text_primary", "text_secondary",
+            "text_muted", "text_inverse", "accent_primary", "accent_primary_hover",
+            "accent_secondary", "accent_success", "accent_error", "accent_warning",
+            "border_default", "border_light", "border_accent",
+            "shadow_sm", "shadow_md", "shadow_lg",
+        ]
+        for theme_name in list_themes():
+            theme = get_theme(theme_name)
+            for color_key in required_colors:
+                assert color_key in theme["colors"], (
+                    f"Theme '{theme_name}' missing color '{color_key}'"
+                )
+
+
+class TestConfigEndpoint:
+    """Tests for the /api/config endpoint."""
+
+    def test_get_config_default_theme(self, client: TestClient) -> None:
+        """Test getting config with default theme."""
+        response = client.get("/api/config")
+        assert response.status_code == 200
+        data = response.json()
+        assert "theme" in data
+        assert data["theme"]["name"] == "default"
+        assert "available_themes" in data
+        assert len(data["available_themes"]) == 6
+
+    def test_get_config_with_custom_theme(self, client: TestClient) -> None:
+        """Test getting config with a custom theme set."""
+        app_state["theme"] = "dark"
+        response = client.get("/api/config")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["theme"]["name"] == "dark"
+
+    async def test_get_config_returns_json_response(self) -> None:
+        """Test that get_config returns proper JSONResponse."""
+        result = await get_config()
+        assert hasattr(result, "status_code")
+        assert result.status_code == 200
 
 
 class TestAPIEndpoints:
