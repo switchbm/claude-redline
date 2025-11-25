@@ -57,12 +57,14 @@ async def get_content():
 async def submit_review(data: dict[str, Any]):
     """Accept the review submission and resolve the future."""
     num_comments = len(data.get('comments', []))
-    overall_comment = data.get('overallComment')
+    overall_comment = data.get('user_overall_comment')
 
-    if num_comments == 0 and not overall_comment:
+    if overall_comment == 'LGTM' and num_comments == 0:
+        logger.info("Review submitted: LGTM (approved with no comments)")
+    elif num_comments == 0 and not overall_comment:
         logger.info("Review submitted: Approved with no comments")
     elif overall_comment:
-        logger.info(f"Review submitted with {num_comments} inline comments and an overall comment")
+        logger.info(f"Review submitted with {num_comments} inline comments and overall comment: '{overall_comment}'")
     else:
         logger.info(f"Review submitted with {num_comments} inline comments")
 

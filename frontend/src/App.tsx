@@ -12,7 +12,8 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 interface Comment {
   id: string
   quote: string
-  text: string
+  full_line_text: string
+  user_comment: string
   timestamp: number
 }
 
@@ -154,16 +155,20 @@ function App() {
       // Update existing comment
       setComments(comments.map(c =>
         c.id === editingCommentId
-          ? { ...c, text: commentText.trim() }
+          ? { ...c, user_comment: commentText.trim() }
           : c
       ))
       setEditingCommentId(null)
     } else {
-      // Add new comment
+      // Add new comment - find the full line containing the quote
+      const lines = content.split('\n')
+      const fullLine = lines.find(line => line.includes(selectedText)) || selectedText
+
       const newComment: Comment = {
         id: crypto.randomUUID(),
         quote: selectedText,
-        text: commentText.trim(),
+        full_line_text: fullLine,
+        user_comment: commentText.trim(),
         timestamp: Date.now(),
       }
       setComments([...comments, newComment])
@@ -180,7 +185,7 @@ function App() {
   const handleEditComment = (comment: Comment) => {
     setEditingCommentId(comment.id)
     setSelectedText(comment.quote)
-    setCommentText(comment.text)
+    setCommentText(comment.user_comment)
     setShowPopover(true)
 
     // Position popover in center of screen for editing
@@ -207,9 +212,15 @@ function App() {
 
   const handleFinalSubmit = async () => {
     try {
+      // Auto-populate "LGTM" if no comments and no overall comment
+      const finalOverallComment =
+        (comments.length === 0 && !overallComment.trim())
+          ? 'LGTM'
+          : (overallComment.trim() || null)
+
       const payload = {
         comments,
-        overallComment: overallComment.trim() || null,
+        user_overall_comment: finalOverallComment,
       }
 
       const response = await fetch('/api/submit', {
@@ -375,7 +386,7 @@ function App() {
                       <blockquote className="text-sm text-gray-600 italic border-l-2 border-yellow-400 pl-3 mb-2 bg-yellow-50 py-1 rounded">
                         "{comment.quote}"
                       </blockquote>
-                      <p className="text-sm text-gray-900">{comment.text}</p>
+                      <p className="text-sm text-gray-900">{comment.user_comment}</p>
                     </div>
                   ))}
                 </div>
