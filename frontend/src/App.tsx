@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
+import rehypeRaw from 'rehype-raw'
 import { CheckCircle, MessageSquare, X, Send, Edit2, FileText, GripVertical, Code } from 'lucide-react'
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
@@ -34,30 +35,82 @@ interface DiffData {
   removed_lines: number[]
 }
 
-// Parse code references from markdown content
-// Format: [[file:path/to/file.py:42]] or [[file:path/to/file.py:42-50]]
-function parseCodeReferences(content: string): string {
-  // Replace [[file:path:line]] or [[file:path:line-lineEnd]] with clickable links
+// Code reference button component
+interface CodeRefButtonProps {
+  filePath: string
+  lineNumber?: number
+  lineEnd?: number
+  onClick: (ref: CodeReference) => void
+}
+
+function CodeRefButton({ filePath, lineNumber, lineEnd, onClick }: CodeRefButtonProps) {
+  const lineDisplay = lineNumber
+    ? lineEnd
+      ? `:${lineNumber}-${lineEnd}`
+      : `:${lineNumber}`
+    : ''
+
+  return (
+    <button
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        onClick({ filePath, lineNumber, lineEnd })
+      }}
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-sm font-mono transition-all hover:scale-105"
+      style={{
+        backgroundColor: 'var(--accent-primary)',
+        color: 'var(--text-inverse)',
+      }}
+      title={`View ${filePath}${lineDisplay}`}
+    >
+      <Code className="w-3 h-3" />
+      {filePath}{lineDisplay}
+    </button>
+  )
+}
+
+// Parse text and replace [[file:...]] with CodeRefButton components
+function parseTextWithCodeRefs(
+  text: string,
+  onCodeRefClick: (ref: CodeReference) => void
+): ReactNode[] {
   const codeRefRegex = /\[\[file:([^:\]]+)(?::(\d+)(?:-(\d+))?)?\]\]/g
+  const parts: ReactNode[] = []
+  let lastIndex = 0
+  let match
 
-  return content.replace(codeRefRegex, (_match, path, line, lineEnd) => {
-    const lineNum = line ? parseInt(line, 10) : undefined
-    const lineEndNum = lineEnd ? parseInt(lineEnd, 10) : undefined
+  while ((match = codeRefRegex.exec(text)) !== null) {
+    // Add text before the match
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index))
+    }
 
-    // Create a span with data attributes that we'll make clickable
-    const lineDisplay = lineNum
-      ? lineEndNum
-        ? `:${lineNum}-${lineEndNum}`
-        : `:${lineNum}`
-      : ''
+    // Add the code reference button
+    const [, path, line, lineEnd] = match
+    parts.push(
+      <CodeRefButton
+        key={`coderef-${match.index}`}
+        filePath={path}
+        lineNumber={line ? parseInt(line, 10) : undefined}
+        lineEnd={lineEnd ? parseInt(lineEnd, 10) : undefined}
+        onClick={onCodeRefClick}
+      />
+    )
 
-    return `<code class="code-reference" data-file="${path}" data-line="${lineNum || ''}" data-line-end="${lineEndNum || ''}">${path}${lineDisplay}</code>`
-  })
+    lastIndex = match.index + match[0].length
+  }
+
+  // Add remaining text
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex))
+  }
+
+  return parts.length > 0 ? parts : [text]
 }
 
 function App() {
   const [content, setContent] = useState<string>('')
-  const [processedContent, setProcessedContent] = useState<string>('')
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(true)
   const [submitted, setSubmitted] = useState(false)
@@ -82,6 +135,12 @@ function App() {
   const modalTextareaRef = useRef<HTMLTextAreaElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  // Handle code reference click
+  const handleCodeRefClick = useCallback((ref: CodeReference) => {
+    setSelectedCodeRef(ref)
+    setShowCodeViewer(true)
+  }, [])
+
   // Fetch content from backend
   useEffect(() => {
     const fetchContent = async () => {
@@ -91,7 +150,6 @@ function App() {
           const data = await response.json()
           if (data.content) {
             setContent(data.content)
-            setProcessedContent(parseCodeReferences(data.content))
             setLoading(false)
           }
         }
@@ -126,9 +184,9 @@ function App() {
 
   // Generate highlighted content when comments change
   useEffect(() => {
-    if (!processedContent) return
+    if (!content) return
 
-    let highlightedContent = processedContent
+    let highlightedContent = content
 
     // Sort comments by quote length (longest first) to avoid nested replacements
     const sortedComments = [...comments].sort((a, b) => b.quote.length - a.quote.length)
@@ -145,34 +203,7 @@ function App() {
     })
 
     setContentWithHighlights(highlightedContent)
-  }, [processedContent, comments])
-
-  // Handle click on code references
-  useEffect(() => {
-    const handleCodeRefClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      if (target.classList.contains('code-reference')) {
-        e.preventDefault()
-        e.stopPropagation()
-
-        const filePath = target.dataset.file
-        const line = target.dataset.line
-        const lineEnd = target.dataset.lineEnd
-
-        if (filePath) {
-          setSelectedCodeRef({
-            filePath,
-            lineNumber: line ? parseInt(line, 10) : undefined,
-            lineEnd: lineEnd ? parseInt(lineEnd, 10) : undefined,
-          })
-          setShowCodeViewer(true)
-        }
-      }
-    }
-
-    document.addEventListener('click', handleCodeRefClick)
-    return () => document.removeEventListener('click', handleCodeRefClick)
-  }, [])
+  }, [content, comments])
 
   // Handle text selection
   useEffect(() => {
@@ -388,6 +419,22 @@ function App() {
     setSelectedCodeRef(null)
   }
 
+  // Custom markdown components that handle code references
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const createTextRenderer = (Component: React.ElementType): any => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return ({ children, ...props }: any) => {
+      if (typeof children === 'string') {
+        const parsed = parseTextWithCodeRefs(children, handleCodeRefClick)
+        if (parsed.length === 1 && typeof parsed[0] === 'string') {
+          return <Component {...props}>{children}</Component>
+        }
+        return <Component {...props}>{parsed}</Component>
+      }
+      return <Component {...props}>{children}</Component>
+    }
+  }
+
   if (submitted) {
     return (
       <div
@@ -521,14 +568,31 @@ function App() {
               {/* Markdown Content */}
               <div className="lg:col-span-2">
                 <div
-                  className="rounded-lg p-8 prose prose-lg"
+                  className="rounded-lg p-8 prose prose-lg max-w-none"
                   style={{
                     backgroundColor: 'var(--bg-card)',
                     boxShadow: 'var(--shadow-sm)'
                   }}
                 >
                   <ReactMarkdown
+                    rehypePlugins={[rehypeRaw]}
                     components={{
+                      // Handle text in paragraphs
+                      p: createTextRenderer('p'),
+                      // Handle text in list items
+                      li: createTextRenderer('li'),
+                      // Handle text in headings
+                      h1: createTextRenderer('h1'),
+                      h2: createTextRenderer('h2'),
+                      h3: createTextRenderer('h3'),
+                      h4: createTextRenderer('h4'),
+                      h5: createTextRenderer('h5'),
+                      h6: createTextRenderer('h6'),
+                      // Handle text in table cells
+                      td: createTextRenderer('td'),
+                      th: createTextRenderer('th'),
+                      // Handle text in blockquotes
+                      blockquote: createTextRenderer('blockquote'),
                       // Allow mark elements for highlighting
                       mark: ({ children, ...props }) => (
                         <mark
@@ -538,32 +602,17 @@ function App() {
                           {children}
                         </mark>
                       ),
-                      // Custom code rendering for code references
+                      // Regular inline code (not code references)
                       code: ({ children, className, ...props }) => {
-                        const isCodeRef = className?.includes('code-reference') ||
-                          (typeof children === 'string' && children.includes('data-file'))
-
-                        if (isCodeRef || (props as any)['data-file']) {
+                        // Check if this is inside a pre tag (code block)
+                        const isBlock = className?.includes('language-')
+                        if (isBlock) {
                           return (
-                            <code
-                              {...props}
-                              className={cn(
-                                className,
-                                'code-reference px-2 py-1 rounded cursor-pointer transition-colors',
-                                'hover:bg-opacity-80'
-                              )}
-                              style={{
-                                backgroundColor: 'var(--accent-primary)',
-                                color: 'var(--text-inverse)',
-                                fontSize: '0.875em'
-                              }}
-                            >
-                              <Code className="w-3 h-3 inline-block mr-1 -mt-0.5" />
+                            <code className={className} {...props}>
                               {children}
                             </code>
                           )
                         }
-
                         return (
                           <code
                             {...props}
@@ -582,7 +631,7 @@ function App() {
                       },
                     }}
                   >
-                    {contentWithHighlights || processedContent}
+                    {contentWithHighlights || content}
                   </ReactMarkdown>
                 </div>
               </div>
