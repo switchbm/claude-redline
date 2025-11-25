@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { CheckCircle, MessageSquare, X, Send, Edit2, FileText } from 'lucide-react'
+import rehypeRaw from 'rehype-raw'
+import { CheckCircle, MessageSquare, X, Send, Edit2, FileText, GripVertical, Code } from 'lucide-react'
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { CodeViewer } from './components/CodeViewer'
 
 // Utility function for merging class names
 function cn(...inputs: (string | undefined | null | false)[]) {
@@ -22,6 +24,91 @@ interface PopoverPosition {
   left: number
 }
 
+interface CodeReference {
+  filePath: string
+  lineNumber?: number
+  lineEnd?: number
+}
+
+interface DiffData {
+  added_lines: number[]
+  removed_lines: number[]
+}
+
+// Code reference button component
+interface CodeRefButtonProps {
+  filePath: string
+  lineNumber?: number
+  lineEnd?: number
+  onClick: (ref: CodeReference) => void
+}
+
+function CodeRefButton({ filePath, lineNumber, lineEnd, onClick }: CodeRefButtonProps) {
+  const lineDisplay = lineNumber
+    ? lineEnd
+      ? `:${lineNumber}-${lineEnd}`
+      : `:${lineNumber}`
+    : ''
+
+  return (
+    <button
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        onClick({ filePath, lineNumber, lineEnd })
+      }}
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-sm font-mono transition-all hover:scale-105"
+      style={{
+        backgroundColor: 'var(--accent-primary)',
+        color: 'var(--text-inverse)',
+      }}
+      title={`View ${filePath}${lineDisplay}`}
+    >
+      <Code className="w-3 h-3" />
+      {filePath}{lineDisplay}
+    </button>
+  )
+}
+
+// Parse text and replace [[file:...]] with CodeRefButton components
+function parseTextWithCodeRefs(
+  text: string,
+  onCodeRefClick: (ref: CodeReference) => void
+): ReactNode[] {
+  const codeRefRegex = /\[\[file:([^:\]]+)(?::(\d+)(?:-(\d+))?)?\]\]/g
+  const parts: ReactNode[] = []
+  let lastIndex = 0
+  let match
+
+  while ((match = codeRefRegex.exec(text)) !== null) {
+    // Add text before the match
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index))
+    }
+
+    // Add the code reference button
+    const [, path, line, lineEnd] = match
+    parts.push(
+      <CodeRefButton
+        key={`coderef-${match.index}`}
+        filePath={path}
+        lineNumber={line ? parseInt(line, 10) : undefined}
+        lineEnd={lineEnd ? parseInt(lineEnd, 10) : undefined}
+        onClick={onCodeRefClick}
+      />
+    )
+
+    lastIndex = match.index + match[0].length
+  }
+
+  // Add remaining text
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex))
+  }
+
+  return parts.length > 0 ? parts : [text]
+}
+
 function App() {
   const [content, setContent] = useState<string>('')
   const [comments, setComments] = useState<Comment[]>([])
@@ -35,9 +122,24 @@ function App() {
   const [showSubmitModal, setShowSubmitModal] = useState(false)
   const [overallComment, setOverallComment] = useState('')
   const [contentWithHighlights, setContentWithHighlights] = useState<string>('')
+
+  // Code viewer state
+  const [selectedCodeRef, setSelectedCodeRef] = useState<CodeReference | null>(null)
+  const [showCodeViewer, setShowCodeViewer] = useState(false)
+  const [diffData, setDiffData] = useState<Record<string, DiffData>>({})
+  const [splitPosition, setSplitPosition] = useState(60) // percentage
+  const [isDragging, setIsDragging] = useState(false)
+
   const popoverRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const modalTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Handle code reference click
+  const handleCodeRefClick = useCallback((ref: CodeReference) => {
+    setSelectedCodeRef(ref)
+    setShowCodeViewer(true)
+  }, [])
 
   // Fetch content from backend
   useEffect(() => {
@@ -61,6 +163,23 @@ function App() {
     fetchContent()
 
     return () => clearInterval(interval)
+  }, [])
+
+  // Fetch diff data
+  useEffect(() => {
+    const fetchDiff = async () => {
+      try {
+        const response = await fetch('/api/diff')
+        if (response.ok) {
+          const data = await response.json()
+          setDiffData(data.diff || {})
+        }
+      } catch (error) {
+        console.error('Error fetching diff:', error)
+      }
+    }
+
+    fetchDiff()
   }, [])
 
   // Generate highlighted content when comments change
@@ -145,6 +264,32 @@ function App() {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showPopover])
+
+  // Handle split pane dragging
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDragging || !containerRef.current) return
+
+    const containerRect = containerRef.current.getBoundingClientRect()
+    const newPosition = ((e.clientX - containerRect.left) / containerRect.width) * 100
+
+    // Clamp between 30% and 80%
+    setSplitPosition(Math.max(30, Math.min(80, newPosition)))
+  }, [isDragging])
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false)
+  }, [])
+
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove)
+        document.removeEventListener('mouseup', handleMouseUp)
+      }
+    }
+  }, [isDragging, handleMouseMove, handleMouseUp])
 
   const handleSaveComment = () => {
     if (!commentText.trim()) {
@@ -269,6 +414,27 @@ function App() {
     }
   }
 
+  const handleCloseCodeViewer = () => {
+    setShowCodeViewer(false)
+    setSelectedCodeRef(null)
+  }
+
+  // Custom markdown components that handle code references
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const createTextRenderer = (Component: React.ElementType): any => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return ({ children, ...props }: any) => {
+      if (typeof children === 'string') {
+        const parsed = parseTextWithCodeRefs(children, handleCodeRefClick)
+        if (parsed.length === 1 && typeof parsed[0] === 'string') {
+          return <Component {...props}>{children}</Component>
+        }
+        return <Component {...props}>{parsed}</Component>
+      }
+      return <Component {...props}>{children}</Component>
+    }
+  }
+
   if (submitted) {
     return (
       <div
@@ -319,7 +485,8 @@ function App() {
 
   return (
     <div
-      className="min-h-screen"
+      ref={containerRef}
+      className="min-h-screen flex flex-col"
       style={{ backgroundColor: 'var(--bg-page)' }}
     >
       {/* Header */}
@@ -331,7 +498,7 @@ function App() {
           boxShadow: 'var(--shadow-sm)'
         }}
       >
-        <div className="max-w-4xl mx-auto px-6 py-4">
+        <div className="px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
               <h1
@@ -344,10 +511,23 @@ function App() {
                 className="text-sm mt-1"
                 style={{ color: 'var(--text-secondary)' }}
               >
-                Select text to add comments
+                Select text to add comments {showCodeViewer ? '' : '| Click code references to view files'}
               </p>
             </div>
             <div className="flex items-center gap-4">
+              {showCodeViewer && (
+                <button
+                  onClick={handleCloseCodeViewer}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+                  style={{
+                    backgroundColor: 'var(--bg-card-hover)',
+                    color: 'var(--text-secondary)'
+                  }}
+                >
+                  <X className="w-4 h-4" />
+                  Close Code
+                </button>
+              )}
               <div
                 className="flex items-center gap-2 text-sm"
                 style={{ color: 'var(--text-secondary)' }}
@@ -373,125 +553,216 @@ function App() {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="max-w-4xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Markdown Content */}
-          <div className="lg:col-span-2">
-            <div
-              className="rounded-lg p-8 prose prose-lg"
-              style={{
-                backgroundColor: 'var(--bg-card)',
-                boxShadow: 'var(--shadow-sm)'
-              }}
-            >
-              <ReactMarkdown
-                components={{
-                  // Allow mark elements for highlighting
-                  mark: ({ children, ...props }) => (
-                    <mark
-                      {...props}
-                      className="px-1 rounded cursor-pointer transition-colors theme-highlight"
-                    >
-                      {children}
-                    </mark>
-                  ),
-                }}
-              >
-                {contentWithHighlights || content}
-              </ReactMarkdown>
-            </div>
-          </div>
-
-          {/* Comments Sidebar */}
-          <div className="lg:col-span-1">
-            <div
-              className="rounded-lg p-6 sticky top-24"
-              style={{
-                backgroundColor: 'var(--bg-card)',
-                boxShadow: 'var(--shadow-sm)'
-              }}
-            >
-              <h2
-                className="text-lg font-bold mb-4"
-                style={{ color: 'var(--text-primary)' }}
-              >
-                Comments
-              </h2>
-              {comments.length === 0 ? (
-                <p
-                  className="text-sm italic"
-                  style={{ color: 'var(--text-muted)' }}
+      {/* Main Content Area */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Panel: Review Document */}
+        <div
+          className="overflow-auto"
+          style={{
+            width: showCodeViewer ? `${splitPosition}%` : '100%',
+            transition: isDragging ? 'none' : 'width 0.2s ease'
+          }}
+        >
+          <div className="max-w-4xl mx-auto px-6 py-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Markdown Content */}
+              <div className="lg:col-span-2">
+                <div
+                  className="rounded-lg p-8 prose prose-lg max-w-none"
+                  style={{
+                    backgroundColor: 'var(--bg-card)',
+                    boxShadow: 'var(--shadow-sm)'
+                  }}
                 >
-                  No comments yet. Select text to add one.
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  {comments.map((comment, index) => (
-                    <div
-                      key={comment.id}
-                      className="border rounded-lg p-4 transition-shadow hover:shadow-md"
-                      style={{ borderColor: 'var(--border-default)' }}
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <MessageSquare
-                            className="w-4 h-4"
-                            style={{ color: 'var(--accent-primary)' }}
-                          />
-                          <span
-                            className="text-xs"
-                            style={{ color: 'var(--text-muted)' }}
+                  <ReactMarkdown
+                    rehypePlugins={[rehypeRaw]}
+                    components={{
+                      // Handle text in paragraphs
+                      p: createTextRenderer('p'),
+                      // Handle text in list items
+                      li: createTextRenderer('li'),
+                      // Handle text in headings
+                      h1: createTextRenderer('h1'),
+                      h2: createTextRenderer('h2'),
+                      h3: createTextRenderer('h3'),
+                      h4: createTextRenderer('h4'),
+                      h5: createTextRenderer('h5'),
+                      h6: createTextRenderer('h6'),
+                      // Handle text in table cells
+                      td: createTextRenderer('td'),
+                      th: createTextRenderer('th'),
+                      // Handle text in blockquotes
+                      blockquote: createTextRenderer('blockquote'),
+                      // Allow mark elements for highlighting
+                      mark: ({ children, ...props }) => (
+                        <mark
+                          {...props}
+                          className="px-1 rounded cursor-pointer transition-colors theme-highlight"
+                        >
+                          {children}
+                        </mark>
+                      ),
+                      // Regular inline code (not code references)
+                      code: ({ children, className, ...props }) => {
+                        // Check if this is inside a pre tag (code block)
+                        const isBlock = className?.includes('language-')
+                        if (isBlock) {
+                          return (
+                            <code className={className} {...props}>
+                              {children}
+                            </code>
+                          )
+                        }
+                        return (
+                          <code
+                            {...props}
+                            className={cn(
+                              className,
+                              'px-1.5 py-0.5 rounded text-sm'
+                            )}
+                            style={{
+                              backgroundColor: 'var(--bg-card-hover)',
+                              color: 'var(--accent-primary)'
+                            }}
                           >
-                            #{index + 1}
-                          </span>
-                        </div>
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => handleEditComment(comment)}
-                            className="transition-colors"
-                            style={{ color: 'var(--text-muted)' }}
-                            onMouseOver={(e) => e.currentTarget.style.color = 'var(--accent-primary)'}
-                            onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
-                            title="Edit comment"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteComment(comment.id)}
-                            className="transition-colors"
-                            style={{ color: 'var(--text-muted)' }}
-                            onMouseOver={(e) => e.currentTarget.style.color = 'var(--accent-error)'}
-                            onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
-                            title="Delete comment"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                      <blockquote
-                        className="text-sm italic border-l-2 pl-3 mb-2 py-1 rounded"
-                        style={{
-                          color: 'var(--text-secondary)',
-                          borderColor: 'var(--accent-warning)',
-                          backgroundColor: 'var(--bg-highlight)'
-                        }}
-                      >
-                        "{comment.quote}"
-                      </blockquote>
-                      <p
-                        className="text-sm"
-                        style={{ color: 'var(--text-primary)' }}
-                      >
-                        {comment.user_comment}
-                      </p>
-                    </div>
-                  ))}
+                            {children}
+                          </code>
+                        )
+                      },
+                    }}
+                  >
+                    {contentWithHighlights || content}
+                  </ReactMarkdown>
                 </div>
-              )}
+              </div>
+
+              {/* Comments Sidebar */}
+              <div className="lg:col-span-1">
+                <div
+                  className="rounded-lg p-6 sticky top-24"
+                  style={{
+                    backgroundColor: 'var(--bg-card)',
+                    boxShadow: 'var(--shadow-sm)'
+                  }}
+                >
+                  <h2
+                    className="text-lg font-bold mb-4"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    Comments
+                  </h2>
+                  {comments.length === 0 ? (
+                    <p
+                      className="text-sm italic"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      No comments yet. Select text to add one.
+                    </p>
+                  ) : (
+                    <div className="space-y-4">
+                      {comments.map((comment, index) => (
+                        <div
+                          key={comment.id}
+                          className="border rounded-lg p-4 transition-shadow hover:shadow-md"
+                          style={{ borderColor: 'var(--border-default)' }}
+                        >
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <MessageSquare
+                                className="w-4 h-4"
+                                style={{ color: 'var(--accent-primary)' }}
+                              />
+                              <span
+                                className="text-xs"
+                                style={{ color: 'var(--text-muted)' }}
+                              >
+                                #{index + 1}
+                              </span>
+                            </div>
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => handleEditComment(comment)}
+                                className="transition-colors"
+                                style={{ color: 'var(--text-muted)' }}
+                                onMouseOver={(e) => e.currentTarget.style.color = 'var(--accent-primary)'}
+                                onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                                title="Edit comment"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteComment(comment.id)}
+                                className="transition-colors"
+                                style={{ color: 'var(--text-muted)' }}
+                                onMouseOver={(e) => e.currentTarget.style.color = 'var(--accent-error)'}
+                                onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                                title="Delete comment"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                          <blockquote
+                            className="text-sm italic border-l-2 pl-3 mb-2 py-1 rounded"
+                            style={{
+                              color: 'var(--text-secondary)',
+                              borderColor: 'var(--accent-warning)',
+                              backgroundColor: 'var(--bg-highlight)'
+                            }}
+                          >
+                            "{comment.quote}"
+                          </blockquote>
+                          <p
+                            className="text-sm"
+                            style={{ color: 'var(--text-primary)' }}
+                          >
+                            {comment.user_comment}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Resize Handle */}
+        {showCodeViewer && (
+          <div
+            className="w-1 cursor-col-resize flex items-center justify-center hover:bg-opacity-50 transition-colors"
+            style={{
+              backgroundColor: isDragging ? 'var(--accent-primary)' : 'var(--border-default)'
+            }}
+            onMouseDown={() => setIsDragging(true)}
+          >
+            <GripVertical
+              className="w-4 h-4"
+              style={{ color: 'var(--text-muted)' }}
+            />
+          </div>
+        )}
+
+        {/* Right Panel: Code Viewer */}
+        {showCodeViewer && (
+          <div
+            className="overflow-hidden border-l"
+            style={{
+              width: `${100 - splitPosition}%`,
+              borderColor: 'var(--border-default)',
+              transition: isDragging ? 'none' : 'width 0.2s ease'
+            }}
+          >
+            <CodeViewer
+              filePath={selectedCodeRef?.filePath || null}
+              lineNumber={selectedCodeRef?.lineNumber}
+              lineEnd={selectedCodeRef?.lineEnd}
+              diffData={diffData}
+              onClose={handleCloseCodeViewer}
+            />
+          </div>
+        )}
       </div>
 
       {/* Comment Popover */}

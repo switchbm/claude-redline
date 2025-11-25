@@ -32,6 +32,8 @@ import argparse
 import asyncio
 import json
 import logging
+import os
+import subprocess
 import sys
 import threading
 import webbrowser
@@ -66,6 +68,8 @@ app_state: dict[str, Any] = {
     "content": "",
     "future": None,
     "theme": DEFAULT_THEME_NAME,
+    "base_dir": None,  # Working directory for file resolution
+    "diff_data": {},  # Git diff data: {file_path: {added_lines: [], removed_lines: []}}
 }
 
 # Port configuration
@@ -114,6 +118,188 @@ async def get_config() -> JSONResponse:
         "theme": theme,
         "available_themes": list_themes(),
     })
+
+
+@app.get("/api/file")
+async def get_file(path: str) -> JSONResponse:
+    """Return the contents of a file for the code viewer.
+
+    Resolves the file path relative to the base_dir set during review.
+    Returns the file content, language (for syntax highlighting), and line count.
+
+    Args:
+        path: Relative or absolute path to the file
+
+    Returns:
+        JSONResponse with {"content": str, "language": str, "lines": int}
+        or error response if file not found
+    """
+    base_dir = app_state.get("base_dir")
+    if not base_dir:
+        base_dir = os.getcwd()
+
+    # Resolve the file path
+    file_path = Path(path)
+    if not file_path.is_absolute():
+        file_path = Path(base_dir) / path
+
+    # Security: Ensure the path is within base_dir
+    try:
+        file_path = file_path.resolve()
+        base_path = Path(base_dir).resolve()
+        if not str(file_path).startswith(str(base_path)):
+            return JSONResponse(
+                {"error": "Access denied: path outside base directory"},
+                status_code=403
+            )
+    except Exception as e:
+        return JSONResponse({"error": f"Invalid path: {e}"}, status_code=400)
+
+    if not file_path.exists():
+        return JSONResponse({"error": "File not found"}, status_code=404)
+
+    if not file_path.is_file():
+        return JSONResponse({"error": "Not a file"}, status_code=400)
+
+    try:
+        content = file_path.read_text(encoding="utf-8")
+        lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+
+        # Determine language from file extension
+        ext_to_language = {
+            ".py": "python",
+            ".js": "javascript",
+            ".jsx": "jsx",
+            ".ts": "typescript",
+            ".tsx": "tsx",
+            ".rs": "rust",
+            ".go": "go",
+            ".java": "java",
+            ".c": "c",
+            ".cpp": "cpp",
+            ".h": "c",
+            ".hpp": "cpp",
+            ".css": "css",
+            ".html": "html",
+            ".json": "json",
+            ".yaml": "yaml",
+            ".yml": "yaml",
+            ".md": "markdown",
+            ".sh": "bash",
+            ".sql": "sql",
+            ".rb": "ruby",
+            ".php": "php",
+            ".swift": "swift",
+            ".kt": "kotlin",
+            ".scala": "scala",
+            ".toml": "toml",
+        }
+        ext = file_path.suffix.lower()
+        language = ext_to_language.get(ext, "text")
+
+        # Get relative path for display
+        try:
+            rel_path = file_path.relative_to(base_path)
+        except ValueError:
+            rel_path = file_path
+
+        return JSONResponse({
+            "content": content,
+            "language": language,
+            "lines": lines,
+            "path": str(rel_path),
+            "absolute_path": str(file_path),
+        })
+    except UnicodeDecodeError:
+        return JSONResponse({"error": "Binary file cannot be displayed"}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"error": f"Error reading file: {e}"}, status_code=500)
+
+
+@app.get("/api/diff")
+async def get_diff() -> JSONResponse:
+    """Return the git diff data for highlighting changed lines.
+
+    Returns the diff_data stored in app_state, which contains information
+    about added and removed lines for each file.
+
+    Returns:
+        JSONResponse with diff data structure
+    """
+    return JSONResponse({"diff": app_state.get("diff_data", {})})
+
+
+def parse_git_diff(base_dir: str) -> dict[str, dict[str, list[int]]]:
+    """Parse git diff to identify added and removed lines.
+
+    Runs `git diff HEAD` in the base directory and parses the output
+    to identify which lines were added or removed in each file.
+
+    Args:
+        base_dir: Directory to run git diff in
+
+    Returns:
+        Dict mapping file paths to {"added_lines": [...], "removed_lines": [...]}
+    """
+    diff_data: dict[str, dict[str, list[int]]] = {}
+
+    try:
+        # Get the diff output
+        result = subprocess.run(
+            ["git", "diff", "HEAD"],
+            cwd=base_dir,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode != 0:
+            logger.warning(f"git diff failed: {result.stderr}")
+            return diff_data
+
+        current_file = None
+        current_line_old = 0
+        current_line_new = 0
+
+        for line in result.stdout.split("\n"):
+            # New file header
+            if line.startswith("+++ b/"):
+                current_file = line[6:]  # Remove "+++ b/" prefix
+                diff_data[current_file] = {"added_lines": [], "removed_lines": []}
+
+            # Hunk header: @@ -old_start,old_count +new_start,new_count @@
+            elif line.startswith("@@"):
+                # Parse the line numbers
+                parts = line.split(" ")
+                for part in parts:
+                    if part.startswith("+") and "," in part:
+                        current_line_new = int(part[1:].split(",")[0])
+                    elif part.startswith("+") and part[1:].isdigit():
+                        current_line_new = int(part[1:])
+
+            # Added line
+            elif line.startswith("+") and not line.startswith("+++"):
+                if current_file and current_file in diff_data:
+                    diff_data[current_file]["added_lines"].append(current_line_new)
+                current_line_new += 1
+
+            # Removed line (we track these but they don't exist in the current file)
+            elif line.startswith("-") and not line.startswith("---"):
+                if current_file and current_file in diff_data:
+                    diff_data[current_file]["removed_lines"].append(current_line_old)
+                current_line_old += 1
+
+            # Context line (unchanged)
+            elif not line.startswith("\\"):
+                current_line_new += 1
+                current_line_old += 1
+
+    except subprocess.TimeoutExpired:
+        logger.warning("git diff timed out")
+    except Exception as e:
+        logger.warning(f"Error parsing git diff: {e}")
+
+    return diff_data
 
 
 @app.post("/api/submit")
@@ -229,18 +415,33 @@ async def list_tools() -> list[Tool]:
                 "2. AFTER completing a phase - when providing a detailed walkthrough/summary, present it for review. "
                 "Opens a browser where the user can highlight text and add comments. "
                 "Returns structured feedback as JSON with all user comments and highlighted sections. "
-                "This blocks execution until the user submits their review."
+                "This blocks execution until the user submits their review.\n\n"
+                "CODE REFERENCES: When referencing specific code changes, use the format "
+                "[[file:path/to/file.py:42]] for a single line or [[file:path/to/file.py:42-50]] for a range. "
+                "These render as clickable links that open a split-view code viewer with syntax highlighting. "
+                "Lines that are part of the git diff are highlighted green. Always use relative paths from the project root."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "markdown_spec": {
                         "type": "string",
-                        "description": "The markdown document to review (implementation plan, phase summary, technical spec, etc.)"
+                        "description": (
+                            "The markdown document to review. Use code references [[file:path:line]] "
+                            "to link to specific code. Examples:\n"
+                            "- [[file:src/auth.py:42]] - links to line 42\n"
+                            "- [[file:src/auth.py:42-50]] - links to lines 42-50\n"
+                            "- [[file:README.md]] - links to entire file\n"
+                            "These become clickable buttons that open a code viewer panel."
+                        )
                     },
                     "context": {
                         "type": "string",
                         "description": "What to review. Examples: 'Implementation plan for feature X', 'Phase 1 completion summary', 'Architecture decision'"
+                    },
+                    "base_dir": {
+                        "type": "string",
+                        "description": "Base directory for resolving file references. Defaults to current working directory."
                     }
                 },
                 "required": ["markdown_spec"]
@@ -275,12 +476,19 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
 
     markdown_spec = arguments.get("markdown_spec", "")
     context = arguments.get("context", "")
+    base_dir = arguments.get("base_dir", os.getcwd())
 
     logger.info("Human review requested")
     logger.info(f"Context: {context}")
+    logger.info(f"Base directory: {base_dir}")
 
-    # Update global state with new content
+    # Update global state with new content and base_dir
     app_state["content"] = markdown_spec
+    app_state["base_dir"] = base_dir
+
+    # Parse git diff for the base directory
+    app_state["diff_data"] = parse_git_diff(base_dir)
+    logger.info(f"Parsed diff data for {len(app_state['diff_data'])} files")
 
     # Create a new future to wait for the review
     loop = asyncio.get_event_loop()
