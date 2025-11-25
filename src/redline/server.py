@@ -4,7 +4,6 @@
 import asyncio
 import json
 import logging
-import os
 import sys
 import threading
 import webbrowser
@@ -14,18 +13,18 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Global state
-app_state = {
+app_state: dict[str, Any] = {
     "content": "",
     "future": None,
 }
@@ -48,29 +47,33 @@ app.add_middleware(
 
 # API Endpoints
 @app.get("/api/content")
-async def get_content():
+async def get_content() -> JSONResponse:
     """Return the current markdown content."""
     return JSONResponse({"content": app_state.get("content", "")})
 
 
 @app.post("/api/submit")
-async def submit_review(data: dict[str, Any]):
+async def submit_review(data: dict[str, Any]) -> JSONResponse:
     """Accept the review submission and resolve the future."""
-    num_comments = len(data.get('comments', []))
-    overall_comment = data.get('user_overall_comment')
+    num_comments = len(data.get("comments", []))
+    overall_comment = data.get("user_overall_comment")
 
-    if overall_comment == 'LGTM' and num_comments == 0:
+    if overall_comment == "LGTM" and num_comments == 0:
         logger.info("Review submitted: LGTM (approved with no comments)")
     elif num_comments == 0 and not overall_comment:
         logger.info("Review submitted: Approved with no comments")
     elif overall_comment:
-        logger.info(f"Review submitted with {num_comments} inline comments and overall comment: '{overall_comment}'")
+        logger.info(
+            f"Review submitted with {num_comments} inline comments "
+            f"and overall comment: '{overall_comment}'"
+        )
     else:
         logger.info(f"Review submitted with {num_comments} inline comments")
 
     # Resolve the future with the submitted data
-    if app_state["future"] and not app_state["future"].done():
-        app_state["future"].set_result(data)
+    future = app_state.get("future")
+    if future and isinstance(future, asyncio.Future) and not future.done():
+        future.set_result(data)
 
     return JSONResponse({"status": "ok"})
 
@@ -85,11 +88,11 @@ else:
 
 
 # HTTP Server Thread
-http_server_thread = None
+http_server_thread: threading.Thread | None = None
 http_server_started = threading.Event()
 
 
-def run_http_server():
+def run_http_server() -> None:
     """Run the HTTP server in a daemon thread."""
     try:
         logger.info(f"Starting HTTP server on port {HTTP_PORT}")
@@ -107,15 +110,13 @@ def run_http_server():
         logger.error(f"HTTP server error: {e}")
 
 
-def start_http_server_if_needed():
+def start_http_server_if_needed() -> None:
     """Start the HTTP server if not already running."""
     global http_server_thread
 
     if http_server_thread is None or not http_server_thread.is_alive():
         http_server_thread = threading.Thread(
-            target=run_http_server,
-            daemon=True,
-            name="HTTPServerThread"
+            target=run_http_server, daemon=True, name="HTTPServerThread"
         )
         http_server_thread.start()
         # Wait for server to start
@@ -177,7 +178,8 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
 
     # Create a new future to wait for the review
     loop = asyncio.get_event_loop()
-    app_state["future"] = loop.create_future()
+    future: asyncio.Future[Any] = loop.create_future()
+    app_state["future"] = future
 
     # Start HTTP server if not running
     start_http_server_if_needed()
@@ -192,32 +194,25 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
 
     # Wait for the user to submit their review
     logger.info("Waiting for user review...")
-    result = await app_state["future"]
+    result = await future
 
     logger.info("Review received!")
 
     # Return the structured feedback
-    return [
-        TextContent(
-            type="text",
-            text=json.dumps(result, indent=2)
-        )
-    ]
+    return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
 
-async def async_main():
+async def async_main() -> None:
     """Main async entry point for the MCP server."""
     logger.info("Starting Redline MCP Server")
 
     async with stdio_server() as (read_stream, write_stream):
         await mcp_server.run(
-            read_stream,
-            write_stream,
-            mcp_server.create_initialization_options()
+            read_stream, write_stream, mcp_server.create_initialization_options()
         )
 
 
-def main():
+def main() -> None:
     """Main entry point."""
     try:
         asyncio.run(async_main())
