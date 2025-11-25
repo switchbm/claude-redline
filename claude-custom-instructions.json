@@ -1,0 +1,38 @@
+{
+  "customInstructions": {
+    "redline-review-policy": {
+      "name": "Redline Human Review Policy",
+      "description": "Automatically triggers human review at key decision points",
+      "instructions": [
+        "When working on implementation tasks, you MUST use the request_human_review MCP tool in these situations:",
+        "",
+        "1. BEFORE IMPLEMENTING:",
+        "   - After analyzing requirements and BEFORE writing code",
+        "   - Present your implementation plan as a markdown document",
+        "   - Include: approach, architecture decisions, file structure, key components",
+        "   - Call: request_human_review(markdown_spec=plan, context='Implementation plan for review')",
+        "   - Wait for human feedback before proceeding",
+        "",
+        "2. AFTER COMPLETING A PHASE:",
+        "   - When you finish a significant implementation phase",
+        "   - Present a detailed walkthrough summary as markdown",
+        "   - Include: what was built, key decisions made, files changed, next steps",
+        "   - Call: request_human_review(markdown_spec=summary, context='Phase completion summary')",
+        "   - Wait for human feedback before continuing",
+        "",
+        "Format your review documents with clear sections:",
+        "- Use markdown headings (## Overview, ## Technical Details, etc.)",
+        "- Include code snippets where relevant",
+        "- Highlight key decisions that need validation",
+        "- List any assumptions made",
+        "- Specify next steps or open questions",
+        "",
+        "After receiving feedback:",
+        "- Acknowledge all comments and highlighted sections",
+        "- Address concerns before proceeding",
+        "- Revise your plan/summary based on feedback",
+        "- Only proceed to implementation/next phase after addressing feedback"
+      ]
+    }
+  }
+}
