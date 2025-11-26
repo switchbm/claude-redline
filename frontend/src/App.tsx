@@ -158,6 +158,7 @@ function App() {
 
   // Track positions of comments relative to their highlights
   const [commentPositions, setCommentPositions] = useState<Record<string, number>>({})
+  const [pendingHighlightPosition, setPendingHighlightPosition] = useState<number | null>(null)
 
   // Handle code reference click
   const handleCodeRefClick = useCallback((ref: CodeReference) => {
@@ -260,12 +261,11 @@ function App() {
 
   // Track positions of highlighted text for aligned comments
   useEffect(() => {
-    if (!markdownContainerRef.current || !sidebarRef.current) return
+    if (!markdownContainerRef.current) return
 
     const updatePositions = () => {
       const containerRect = markdownContainerRef.current?.getBoundingClientRect()
-      const sidebarRect = sidebarRef.current?.getBoundingClientRect()
-      if (!containerRect || !sidebarRect) return
+      if (!containerRect) return
 
       const newPositions: Record<string, number> = {}
 
@@ -275,14 +275,23 @@ function App() {
         const commentId = mark.getAttribute('data-comment-id')
         if (commentId) {
           const markRect = mark.getBoundingClientRect()
-          // Calculate position relative to the sidebar's top
-          // Account for the header (about 100px) and some padding
-          const relativeTop = markRect.top - sidebarRect.top
+          // Calculate position relative to the markdown container's top
+          const relativeTop = markRect.top - containerRect.top
           newPositions[commentId] = Math.max(0, relativeTop)
         }
       })
 
       setCommentPositions(newPositions)
+
+      // Also track pending highlight position
+      const pendingMark = markdownContainerRef.current?.querySelector('mark.theme-highlight-pending')
+      if (pendingMark) {
+        const pendingRect = pendingMark.getBoundingClientRect()
+        const relativeTop = pendingRect.top - containerRect.top
+        setPendingHighlightPosition(Math.max(0, relativeTop))
+      } else {
+        setPendingHighlightPosition(null)
+      }
     }
 
     // Update positions after a short delay to ensure DOM is rendered
@@ -298,7 +307,7 @@ function App() {
       scrollContainer?.removeEventListener('scroll', updatePositions)
       window.removeEventListener('resize', updatePositions)
     }
-  }, [contentWithHighlights, comments])
+  }, [contentWithHighlights, comments, pendingHighlight])
 
   // Handle text selection
   useEffect(() => {
@@ -801,31 +810,17 @@ function App() {
 
               {/* Comments Sidebar */}
               <div className="lg:col-span-1 relative" ref={sidebarRef}>
-                {/* Comment input forms - fixed at top */}
-                <div
-                  className="sticky top-24 z-10 mb-4"
-                  style={{
-                    backgroundColor: 'var(--bg-page)',
-                    paddingBottom: '8px'
-                  }}
-                >
-                  <h2
-                    className="text-base font-bold mb-3 px-4 pt-4 rounded-t-lg"
-                    style={{
-                      color: 'var(--text-primary)',
-                      backgroundColor: 'var(--bg-card)'
-                    }}
-                  >
-                    Comments
-                  </h2>
-
-                  {/* Inline Comment Input (shown when text is selected) */}
+                {/* Positioned comments container - matches markdown container height */}
+                <div className="relative" style={{ minHeight: '100%' }}>
+                  {/* New Comment Input - positioned at pending highlight */}
                   {showPopover && (
                     <div
-                      className="border rounded-lg p-3 mb-4"
+                      className="absolute left-0 right-0 border rounded-lg p-3 z-10"
                       style={{
                         borderColor: 'var(--accent-primary)',
-                        backgroundColor: 'var(--bg-page)'
+                        backgroundColor: 'var(--bg-card)',
+                        top: `${pendingHighlightPosition ?? 0}px`,
+                        transition: 'top 0.15s ease-out'
                       }}
                     >
                       <div className="flex items-center justify-between mb-2">
@@ -988,21 +983,17 @@ function App() {
 
                   {comments.length === 0 && codeComments.length === 0 && !showPopover && !showCodeCommentInput && (
                     <p
-                      className="text-sm italic px-4 pb-4"
+                      className="text-sm italic pt-8"
                       style={{ color: 'var(--text-muted)' }}
                     >
                       No comments yet. Select text to add one.
                     </p>
                   )}
-                </div>
 
-                {/* Positioned Comments Container */}
-                {(comments.length > 0 || codeComments.length > 0) && (
-                  <div className="relative" style={{ minHeight: '200px' }}>
-                    {/* Document Comments - positioned to align with highlights */}
-                    {(() => {
-                      const stackedPositions = getStackedPositions()
-                      return comments.map((comment, index) => (
+                  {/* Document Comments - positioned to align with highlights */}
+                  {(() => {
+                    const stackedPositions = getStackedPositions()
+                    return comments.map((comment, index) => (
                         <div
                           key={comment.id}
                           className="absolute left-0 right-0 border rounded-lg p-3 transition-all hover:shadow-md overflow-hidden"
@@ -1139,8 +1130,7 @@ function App() {
                         ))}
                       </div>
                     )}
-                  </div>
-                )}
+                </div>
               </div>
             </div>
           </div>
