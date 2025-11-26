@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
+import remarkGfm from 'remark-gfm'
 import { CheckCircle, MessageSquare, X, Send, Edit2, FileText, GripVertical, Code, FileCode } from 'lucide-react'
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
@@ -327,16 +328,38 @@ function App() {
       const range = selection.getRangeAt(0)
 
       // Get surrounding context to uniquely identify this occurrence
-      // Capture ~30 chars before and after the selection
+      // We need to handle both text nodes (single line) and element nodes (multi-line)
       const container = range.commonAncestorContainer
-      const fullText = container.textContent || ''
-      const startOffset = range.startOffset
-      const endOffset = range.endOffset
+      let context: string
 
-      // Get context: 30 chars before + selected text + 30 chars after
-      const contextStart = Math.max(0, startOffset - 30)
-      const contextEnd = Math.min(fullText.length, endOffset + 30)
-      const context = fullText.slice(contextStart, contextEnd)
+      if (container.nodeType === Node.TEXT_NODE) {
+        // For text nodes, we can use character offsets directly
+        const fullText = container.textContent || ''
+        const startOffset = range.startOffset
+        const endOffset = range.endOffset
+        const contextStart = Math.max(0, startOffset - 30)
+        const contextEnd = Math.min(fullText.length, endOffset + 30)
+        context = fullText.slice(contextStart, contextEnd)
+      } else {
+        // For element nodes (multi-line selection), find text in original content
+        // Normalize whitespace to match how markdown renders
+        const normalizedText = text.replace(/\s+/g, ' ')
+        const normalizedContent = content.replace(/\s+/g, ' ')
+        const textIndex = normalizedContent.indexOf(normalizedText)
+
+        if (textIndex !== -1) {
+          // Map back to original content position (approximate)
+          const originalIndex = content.indexOf(text) !== -1
+            ? content.indexOf(text)
+            : Math.min(textIndex, content.length - text.length)
+          const contextStart = Math.max(0, originalIndex - 30)
+          const contextEnd = Math.min(content.length, originalIndex + text.length + 30)
+          context = content.slice(contextStart, contextEnd)
+        } else {
+          // Fallback: use the text itself as context
+          context = text
+        }
+      }
 
       // Calculate position for comment alignment - get position relative to markdown container
       const rangeRect = range.getBoundingClientRect()
@@ -361,7 +384,7 @@ function App() {
 
     document.addEventListener('mouseup', handleSelection)
     return () => document.removeEventListener('mouseup', handleSelection)
-  }, [])
+  }, [content])
 
   // Handle click outside popover
   useEffect(() => {
@@ -752,6 +775,7 @@ function App() {
                   }}
                 >
                   <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
                     rehypePlugins={[rehypeRaw]}
                     components={{
                       // Handle text in paragraphs
