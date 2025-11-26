@@ -847,7 +847,7 @@ function App() {
                   {/* New Comment Input - positioned at pending highlight */}
                   {showPopover && (
                     <div
-                      className="absolute left-0 right-0 border rounded-lg p-3 z-10"
+                      className="absolute left-0 right-0 border rounded-lg p-3 z-20"
                       style={{
                         borderColor: 'var(--accent-primary)',
                         backgroundColor: 'var(--bg-card)',
@@ -926,7 +926,7 @@ function App() {
                   {/* Code Comment Input (shown when code is selected) */}
                   {showCodeCommentInput && pendingCodeComment && (
                     <div
-                      className="border rounded-lg p-3 mb-4"
+                      className="border rounded-lg p-3 mb-4 relative z-20"
                       style={{
                         borderColor: '#f59e0b',
                         backgroundColor: 'var(--bg-page)'
