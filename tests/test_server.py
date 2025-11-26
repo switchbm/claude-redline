@@ -357,7 +357,6 @@ class TestFileEndpoint:
     def test_get_file_not_found(self, client: TestClient) -> None:
         """Test getting a file that doesn't exist."""
         import tempfile
-        import os
 
         with tempfile.TemporaryDirectory() as tmpdir:
             app_state["base_dir"] = tmpdir
@@ -367,8 +366,8 @@ class TestFileEndpoint:
 
     def test_get_file_success(self, client: TestClient) -> None:
         """Test getting a file successfully."""
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             app_state["base_dir"] = tmpdir
@@ -388,7 +387,6 @@ class TestFileEndpoint:
     def test_get_file_path_outside_base_dir(self, client: TestClient) -> None:
         """Test that accessing files outside base_dir is forbidden."""
         import tempfile
-        import os
 
         with tempfile.TemporaryDirectory() as tmpdir:
             app_state["base_dir"] = tmpdir
@@ -399,8 +397,8 @@ class TestFileEndpoint:
 
     def test_get_file_binary(self, client: TestClient) -> None:
         """Test getting a binary file returns error."""
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             app_state["base_dir"] = tmpdir
@@ -415,8 +413,8 @@ class TestFileEndpoint:
 
     def test_get_file_not_a_file(self, client: TestClient) -> None:
         """Test getting a directory returns error."""
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             app_state["base_dir"] = tmpdir
@@ -430,8 +428,8 @@ class TestFileEndpoint:
 
     def test_get_file_language_detection(self, client: TestClient) -> None:
         """Test language detection from file extensions."""
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             app_state["base_dir"] = tmpdir
@@ -456,7 +454,6 @@ class TestFileEndpoint:
 
     async def test_get_file_no_base_dir_uses_cwd(self) -> None:
         """Test that get_file uses cwd when base_dir is None."""
-        import os
 
         app_state["base_dir"] = None
         # This should use os.getcwd() as the base directory

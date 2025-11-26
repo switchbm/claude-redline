@@ -153,6 +153,11 @@ function App() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const modalTextareaRef = useRef<HTMLTextAreaElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const markdownContainerRef = useRef<HTMLDivElement>(null)
+  const sidebarRef = useRef<HTMLDivElement>(null)
+
+  // Track positions of comments relative to their highlights
+  const [commentPositions, setCommentPositions] = useState<Record<string, number>>({})
 
   // Handle code reference click
   const handleCodeRefClick = useCallback((ref: CodeReference) => {
@@ -252,6 +257,48 @@ function App() {
 
     setContentWithHighlights(highlightedContent)
   }, [content, comments, pendingHighlight])
+
+  // Track positions of highlighted text for aligned comments
+  useEffect(() => {
+    if (!markdownContainerRef.current || !sidebarRef.current) return
+
+    const updatePositions = () => {
+      const containerRect = markdownContainerRef.current?.getBoundingClientRect()
+      const sidebarRect = sidebarRef.current?.getBoundingClientRect()
+      if (!containerRect || !sidebarRect) return
+
+      const newPositions: Record<string, number> = {}
+
+      // Find all highlighted marks with comment IDs
+      const marks = markdownContainerRef.current?.querySelectorAll('mark[data-comment-id]')
+      marks?.forEach((mark) => {
+        const commentId = mark.getAttribute('data-comment-id')
+        if (commentId) {
+          const markRect = mark.getBoundingClientRect()
+          // Calculate position relative to the sidebar's top
+          // Account for the header (about 100px) and some padding
+          const relativeTop = markRect.top - sidebarRect.top
+          newPositions[commentId] = Math.max(0, relativeTop)
+        }
+      })
+
+      setCommentPositions(newPositions)
+    }
+
+    // Update positions after a short delay to ensure DOM is rendered
+    const timeoutId = setTimeout(updatePositions, 100)
+
+    // Also update on scroll and resize
+    const scrollContainer = markdownContainerRef.current?.closest('.overflow-auto')
+    scrollContainer?.addEventListener('scroll', updatePositions)
+    window.addEventListener('resize', updatePositions)
+
+    return () => {
+      clearTimeout(timeoutId)
+      scrollContainer?.removeEventListener('scroll', updatePositions)
+      window.removeEventListener('resize', updatePositions)
+    }
+  }, [contentWithHighlights, comments])
 
   // Handle text selection
   useEffect(() => {
@@ -510,6 +557,30 @@ function App() {
     setSelectedCodeRef(null)
   }
 
+  // Calculate stacked positions for comments to avoid overlap
+  const getStackedPositions = useCallback(() => {
+    const COMMENT_HEIGHT = 120 // Approximate height of a comment card
+    const COMMENT_GAP = 8 // Gap between comments
+
+    // Sort comments by their target position
+    const sortedComments = [...comments]
+      .map(c => ({ ...c, targetY: commentPositions[c.id] ?? 0 }))
+      .sort((a, b) => a.targetY - b.targetY)
+
+    const stackedPositions: Record<string, number> = {}
+    let lastBottom = 0
+
+    sortedComments.forEach((comment) => {
+      const targetY = comment.targetY
+      // If this comment would overlap with the previous, stack it below
+      const actualY = Math.max(targetY, lastBottom)
+      stackedPositions[comment.id] = actualY
+      lastBottom = actualY + COMMENT_HEIGHT + COMMENT_GAP
+    })
+
+    return stackedPositions
+  }, [comments, commentPositions])
+
   // Custom markdown components that handle code references
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const createTextRenderer = (Component: React.ElementType): any => {
@@ -659,6 +730,7 @@ function App() {
               {/* Markdown Content */}
               <div className="lg:col-span-2">
                 <div
+                  ref={markdownContainerRef}
                   className="rounded-lg p-8 prose prose-lg max-w-none"
                   style={{
                     backgroundColor: 'var(--bg-card)',
@@ -728,17 +800,21 @@ function App() {
               </div>
 
               {/* Comments Sidebar */}
-              <div className="lg:col-span-1">
+              <div className="lg:col-span-1 relative" ref={sidebarRef}>
+                {/* Comment input forms - fixed at top */}
                 <div
-                  className="rounded-lg p-4 sticky top-24"
+                  className="sticky top-24 z-10 mb-4"
                   style={{
-                    backgroundColor: 'var(--bg-card)',
-                    boxShadow: 'var(--shadow-sm)'
+                    backgroundColor: 'var(--bg-page)',
+                    paddingBottom: '8px'
                   }}
                 >
                   <h2
-                    className="text-base font-bold mb-3"
-                    style={{ color: 'var(--text-primary)' }}
+                    className="text-base font-bold mb-3 px-4 pt-4 rounded-t-lg"
+                    style={{
+                      color: 'var(--text-primary)',
+                      backgroundColor: 'var(--bg-card)'
+                    }}
                   >
                     Comments
                   </h2>
@@ -910,21 +986,32 @@ function App() {
                     </div>
                   )}
 
-                  {comments.length === 0 && codeComments.length === 0 && !showPopover && !showCodeCommentInput ? (
+                  {comments.length === 0 && codeComments.length === 0 && !showPopover && !showCodeCommentInput && (
                     <p
-                      className="text-sm italic"
+                      className="text-sm italic px-4 pb-4"
                       style={{ color: 'var(--text-muted)' }}
                     >
                       No comments yet. Select text to add one.
                     </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {/* Document Comments */}
-                      {comments.map((comment, index) => (
+                  )}
+                </div>
+
+                {/* Positioned Comments Container */}
+                {(comments.length > 0 || codeComments.length > 0) && (
+                  <div className="relative" style={{ minHeight: '200px' }}>
+                    {/* Document Comments - positioned to align with highlights */}
+                    {(() => {
+                      const stackedPositions = getStackedPositions()
+                      return comments.map((comment, index) => (
                         <div
                           key={comment.id}
-                          className="border rounded-lg p-3 transition-shadow hover:shadow-md overflow-hidden"
-                          style={{ borderColor: 'var(--border-default)' }}
+                          className="absolute left-0 right-0 border rounded-lg p-3 transition-all hover:shadow-md overflow-hidden"
+                          style={{
+                            borderColor: 'var(--border-default)',
+                            backgroundColor: 'var(--bg-card)',
+                            top: `${stackedPositions[comment.id] ?? index * 128}px`,
+                            transition: 'top 0.2s ease-out'
+                          }}
                         >
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex items-center gap-2">
@@ -984,64 +1071,76 @@ function App() {
                             {comment.user_comment}
                           </p>
                         </div>
-                      ))}
+                      ))
+                    })()}
 
-                      {/* Code Comments */}
-                      {codeComments.map((codeComment, index) => (
-                        <div
-                          key={codeComment.id}
-                          className="border rounded-lg p-3 transition-shadow hover:shadow-md overflow-hidden"
-                          style={{ borderColor: '#f59e0b' }}
-                        >
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <FileCode
-                                className="w-4 h-4"
-                                style={{ color: '#f59e0b' }}
-                              />
-                              <span
-                                className="text-xs"
-                                style={{ color: 'var(--text-muted)' }}
-                              >
-                                Code #{index + 1}
-                              </span>
-                            </div>
-                            <button
-                              onClick={() => handleDeleteCodeComment(codeComment.id)}
-                              className="transition-colors"
-                              style={{ color: 'var(--text-muted)' }}
-                              onMouseOver={(e) => e.currentTarget.style.color = 'var(--accent-error)'}
-                              onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
-                              title="Delete code comment"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
+                    {/* Code Comments - shown at the bottom after document comments */}
+                    {codeComments.length > 0 && (
+                      <div
+                        className="absolute left-0 right-0"
+                        style={{
+                          top: `${Math.max(...Object.values(getStackedPositions()), 0) + (comments.length > 0 ? 128 : 0)}px`
+                        }}
+                      >
+                        {codeComments.map((codeComment, index) => (
                           <div
-                            className="text-xs mb-2 px-2 py-1 rounded font-mono break-words"
+                            key={codeComment.id}
+                            className="border rounded-lg p-3 mb-2 transition-shadow hover:shadow-md overflow-hidden"
                             style={{
-                              backgroundColor: '#1e1e1e',
-                              color: '#858585',
-                              wordBreak: 'break-word'
+                              borderColor: '#f59e0b',
+                              backgroundColor: 'var(--bg-card)'
                             }}
                           >
-                            {codeComment.file_path}:{codeComment.line_start}
-                            {codeComment.line_end !== codeComment.line_start && `-${codeComment.line_end}`}
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <FileCode
+                                  className="w-4 h-4"
+                                  style={{ color: '#f59e0b' }}
+                                />
+                                <span
+                                  className="text-xs"
+                                  style={{ color: 'var(--text-muted)' }}
+                                >
+                                  Code #{index + 1}
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteCodeComment(codeComment.id)}
+                                className="transition-colors"
+                                style={{ color: 'var(--text-muted)' }}
+                                onMouseOver={(e) => e.currentTarget.style.color = 'var(--accent-error)'}
+                                onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                                title="Delete code comment"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <div
+                              className="text-xs mb-2 px-2 py-1 rounded font-mono break-words"
+                              style={{
+                                backgroundColor: '#1e1e1e',
+                                color: '#858585',
+                                wordBreak: 'break-word'
+                              }}
+                            >
+                              {codeComment.file_path}:{codeComment.line_start}
+                              {codeComment.line_end !== codeComment.line_start && `-${codeComment.line_end}`}
+                            </div>
+                            <p
+                              className="text-xs break-words"
+                              style={{
+                                color: 'var(--text-primary)',
+                                wordBreak: 'break-word'
+                              }}
+                            >
+                              {codeComment.user_comment}
+                            </p>
                           </div>
-                          <p
-                            className="text-xs break-words"
-                            style={{
-                              color: 'var(--text-primary)',
-                              wordBreak: 'break-word'
-                            }}
-                          >
-                            {codeComment.user_comment}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>

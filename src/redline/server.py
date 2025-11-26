@@ -522,7 +522,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     logger.info(f"Waiting for user review (timeout: {REVIEW_TIMEOUT_SECONDS // 60} minutes)...")
     try:
         result = await asyncio.wait_for(future, timeout=REVIEW_TIMEOUT_SECONDS)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.error("Review timed out after 20 minutes")
         return [TextContent(
             type="text",
