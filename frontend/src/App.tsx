@@ -19,6 +19,7 @@ interface Comment {
   user_comment: string
   timestamp: number
   context: string  // Surrounding context to uniquely identify this occurrence
+  initialPosition: number  // Position when comment was created (fallback for unhighlightable text)
 }
 
 interface CodeComment {
@@ -458,6 +459,7 @@ function App() {
         user_comment: commentText.trim(),
         timestamp: Date.now(),
         context: pendingHighlight?.context || '',  // Store context for unique matching
+        initialPosition: pendingHighlightPosition ?? 0,  // Store position for fallback
       }
       setComments([...comments, newComment])
     }
@@ -600,8 +602,9 @@ function App() {
     const COMMENT_GAP = 8 // Gap between comments
 
     // Sort comments by their target position
+    // Use commentPositions (from DOM) if available, fall back to initialPosition (stored when created)
     const sortedComments = [...comments]
-      .map(c => ({ ...c, targetY: commentPositions[c.id] ?? 0 }))
+      .map(c => ({ ...c, targetY: commentPositions[c.id] ?? c.initialPosition ?? 0 }))
       .sort((a, b) => a.targetY - b.targetY)
 
     const stackedPositions: Record<string, number> = {}
