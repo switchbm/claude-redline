@@ -12,6 +12,13 @@ function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs))
 }
 
+interface HighlightRect {
+  top: number
+  left: number
+  width: number
+  height: number
+}
+
 interface Comment {
   id: string
   quote: string
@@ -20,6 +27,7 @@ interface Comment {
   timestamp: number
   context: string  // Surrounding context to uniquely identify this occurrence
   initialPosition: number  // Position when comment was created (fallback for unhighlightable text)
+  highlightRects: HighlightRect[]  // Stored highlight rectangles for overlay rendering
 }
 
 interface CodeComment {
@@ -30,6 +38,7 @@ interface CodeComment {
   quote: string
   user_comment: string
   timestamp: number
+  initialPosition: number  // Position for stacking in sidebar
 }
 
 interface PendingCodeComment {
@@ -161,6 +170,9 @@ function App() {
   // Track positions of comments relative to their highlights
   const [commentPositions, setCommentPositions] = useState<Record<string, number>>({})
   const [pendingHighlightPosition, setPendingHighlightPosition] = useState<number | null>(null)
+
+  // Store highlight rectangles for overlay-based highlighting (works for tables/multi-line)
+  const [pendingHighlightRects, setPendingHighlightRects] = useState<HighlightRect[]>([])
 
   // Handle code reference click
   const handleCodeRefClick = useCallback((ref: CodeReference) => {
@@ -368,6 +380,20 @@ function App() {
       if (containerRect) {
         const relativeTop = rangeRect.top - containerRect.top
         setPendingHighlightPosition(Math.max(0, relativeTop))
+
+        // Capture all client rects for overlay-based highlighting (works for multi-line/tables)
+        const clientRects = range.getClientRects()
+        const rects: { top: number; left: number; width: number; height: number }[] = []
+        for (let i = 0; i < clientRects.length; i++) {
+          const rect = clientRects[i]
+          rects.push({
+            top: rect.top - containerRect.top,
+            left: rect.left - containerRect.left,
+            width: rect.width,
+            height: rect.height,
+          })
+        }
+        setPendingHighlightRects(rects)
       }
 
       // Show comment input in sidebar
@@ -376,7 +402,7 @@ function App() {
       setShowPopover(true)
       setCommentText('')
 
-      // Clear native selection so our React highlight is visible
+      // Clear native selection - our overlay highlights will show instead
       setTimeout(() => {
         window.getSelection()?.removeAllRanges()
         textareaRef.current?.focus()
@@ -401,6 +427,7 @@ function App() {
         setSelectedText('')
         setCommentText('')
         setPendingHighlight(null)
+        setPendingHighlightRects([])
       }
     }
 
@@ -460,11 +487,13 @@ function App() {
         timestamp: Date.now(),
         context: pendingHighlight?.context || '',  // Store context for unique matching
         initialPosition: pendingHighlightPosition ?? 0,  // Store position for fallback
+        highlightRects: pendingHighlightRects,  // Store highlight rectangles for overlay rendering
       }
       setComments([...comments, newComment])
     }
 
     setShowPopover(false)
+    setPendingHighlightRects([])
     setSelectedText('')
     setCommentText('')
     setPendingHighlight(null)
@@ -498,6 +527,15 @@ function App() {
   const handleSaveCodeComment = () => {
     if (!codeCommentText.trim() || !pendingCodeComment) return
 
+    // Calculate position: place after all existing comments
+    const COMMENT_HEIGHT = 120
+    const COMMENT_GAP = 8
+    const existingDocPositions = comments.map(c => commentPositions[c.id] ?? c.initialPosition ?? 0)
+    const existingCodePositions = codeComments.map(c => c.initialPosition)
+    const allPositions = [...existingDocPositions, ...existingCodePositions]
+    const lastPosition = allPositions.length > 0 ? Math.max(...allPositions) : 0
+    const newPosition = lastPosition + (allPositions.length > 0 ? COMMENT_HEIGHT + COMMENT_GAP : 0)
+
     const newCodeComment: CodeComment = {
       id: crypto.randomUUID(),
       file_path: pendingCodeComment.file_path,
@@ -506,6 +544,7 @@ function App() {
       quote: pendingCodeComment.quote,
       user_comment: codeCommentText.trim(),
       timestamp: Date.now(),
+      initialPosition: newPosition,
     }
     setCodeComments([...codeComments, newCodeComment])
     setShowCodeCommentInput(false)
@@ -571,6 +610,7 @@ function App() {
     setSelectedText('')
     setCommentText('')
     setPendingHighlight(null)
+    setPendingHighlightRects([])
     window.getSelection()?.removeAllRanges()
   }
 
@@ -596,30 +636,52 @@ function App() {
     setSelectedCodeRef(null)
   }
 
-  // Calculate stacked positions for comments to avoid overlap
-  const getStackedPositions = useCallback(() => {
+  // Calculate stacked positions for ALL comments (document + code) to avoid overlap
+  const getStackedPositions = useCallback((): { doc: Record<string, number>, code: Record<string, number> } => {
     const COMMENT_HEIGHT = 120 // Approximate height of a comment card
     const COMMENT_GAP = 8 // Gap between comments
 
-    // Sort comments by their target position
-    // Use commentPositions (from DOM) if available, fall back to initialPosition (stored when created)
-    const sortedComments = [...comments]
-      .map(c => ({ ...c, targetY: commentPositions[c.id] ?? c.initialPosition ?? 0 }))
-      .sort((a, b) => a.targetY - b.targetY)
+    // Combine both document comments and code comments into a unified list
+    type UnifiedComment = { id: string; type: 'doc' | 'code'; targetY: number; timestamp: number }
 
-    const stackedPositions: Record<string, number> = {}
+    const docComments: UnifiedComment[] = comments.map(c => ({
+      id: c.id,
+      type: 'doc' as const,
+      targetY: commentPositions[c.id] ?? c.initialPosition ?? 0,
+      timestamp: c.timestamp,
+    }))
+
+    const codeCommentsUnified: UnifiedComment[] = codeComments.map(c => ({
+      id: c.id,
+      type: 'code' as const,
+      targetY: c.initialPosition,
+      timestamp: c.timestamp,
+    }))
+
+    // Sort all comments by target position, then by timestamp for tie-breaking
+    const allComments = [...docComments, ...codeCommentsUnified]
+      .sort((a, b) => a.targetY - b.targetY || a.timestamp - b.timestamp)
+
+    const docPositions: Record<string, number> = {}
+    const codePositions: Record<string, number> = {}
     let lastBottom = 0
 
-    sortedComments.forEach((comment) => {
+    allComments.forEach((comment) => {
       const targetY = comment.targetY
       // If this comment would overlap with the previous, stack it below
       const actualY = Math.max(targetY, lastBottom)
-      stackedPositions[comment.id] = actualY
+
+      if (comment.type === 'doc') {
+        docPositions[comment.id] = actualY
+      } else {
+        codePositions[comment.id] = actualY
+      }
+
       lastBottom = actualY + COMMENT_HEIGHT + COMMENT_GAP
     })
 
-    return stackedPositions
-  }, [comments, commentPositions])
+    return { doc: docPositions, code: codePositions }
+  }, [comments, codeComments, commentPositions])
 
   // Custom markdown components that handle code references
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -771,12 +833,46 @@ function App() {
               <div className="lg:col-span-2">
                 <div
                   ref={markdownContainerRef}
-                  className="rounded-lg p-8 prose prose-lg max-w-none"
+                  className="rounded-lg p-8 prose prose-lg max-w-none relative"
                   style={{
                     backgroundColor: 'var(--bg-card)',
                     boxShadow: 'var(--shadow-sm)'
                   }}
                 >
+                  {/* Highlight overlays for pending selection */}
+                  {pendingHighlightRects.map((rect, index) => (
+                    <div
+                      key={`pending-highlight-${index}`}
+                      className="absolute pointer-events-none"
+                      style={{
+                        top: rect.top,
+                        left: rect.left,
+                        width: rect.width,
+                        height: rect.height,
+                        backgroundColor: 'var(--accent-warning)',
+                        opacity: 0.3,
+                        borderRadius: 2,
+                      }}
+                    />
+                  ))}
+                  {/* Highlight overlays for saved comments */}
+                  {comments.map((comment) =>
+                    comment.highlightRects?.map((rect, index) => (
+                      <div
+                        key={`saved-highlight-${comment.id}-${index}`}
+                        className="absolute pointer-events-none"
+                        style={{
+                          top: rect.top,
+                          left: rect.left,
+                          width: rect.width,
+                          height: rect.height,
+                          backgroundColor: 'var(--accent-warning)',
+                          opacity: 0.25,
+                          borderRadius: 2,
+                        }}
+                      />
+                    ))
+                  )}
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     rehypePlugins={[rehypeRaw]}
@@ -1024,7 +1120,7 @@ function App() {
 
                   {/* Document Comments - positioned to align with highlights */}
                   {(() => {
-                    const stackedPositions = getStackedPositions()
+                    const { doc: stackedPositions } = getStackedPositions()
                     return comments.map((comment, index) => (
                         <div
                           key={comment.id}
@@ -1097,71 +1193,67 @@ function App() {
                       ))
                     })()}
 
-                    {/* Code Comments - shown at the bottom after document comments */}
-                    {codeComments.length > 0 && (
-                      <div
-                        className="absolute left-0 right-0"
-                        style={{
-                          top: `${Math.max(...Object.values(getStackedPositions()), 0) + (comments.length > 0 ? 128 : 0)}px`
-                        }}
-                      >
-                        {codeComments.map((codeComment, index) => (
+                    {/* Code Comments - positioned with unified stacking */}
+                    {(() => {
+                      const { code: codeStackedPositions } = getStackedPositions()
+                      return codeComments.map((codeComment, index) => (
+                        <div
+                          key={codeComment.id}
+                          className="absolute left-0 right-0 border rounded-lg p-3 transition-all hover:shadow-md overflow-hidden"
+                          style={{
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'var(--bg-card)',
+                            top: `${codeStackedPositions[codeComment.id] ?? index * 128}px`,
+                            transition: 'top 0.2s ease-out'
+                          }}
+                        >
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <FileCode
+                                className="w-4 h-4"
+                                style={{ color: '#f59e0b' }}
+                              />
+                              <span
+                                className="text-xs"
+                                style={{ color: 'var(--text-muted)' }}
+                              >
+                                Code #{index + 1}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteCodeComment(codeComment.id)}
+                              className="transition-colors"
+                              style={{ color: 'var(--text-muted)' }}
+                              onMouseOver={(e) => e.currentTarget.style.color = 'var(--accent-error)'}
+                              onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                              title="Delete code comment"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
                           <div
-                            key={codeComment.id}
-                            className="border rounded-lg p-3 mb-2 transition-shadow hover:shadow-md overflow-hidden"
+                            className="text-xs mb-2 px-2 py-1 rounded font-mono break-words"
                             style={{
-                              borderColor: '#f59e0b',
-                              backgroundColor: 'var(--bg-card)'
+                              backgroundColor: '#1e1e1e',
+                              color: '#858585',
+                              wordBreak: 'break-word'
                             }}
                           >
-                            <div className="flex items-start justify-between mb-2">
-                              <div className="flex items-center gap-2">
-                                <FileCode
-                                  className="w-4 h-4"
-                                  style={{ color: '#f59e0b' }}
-                                />
-                                <span
-                                  className="text-xs"
-                                  style={{ color: 'var(--text-muted)' }}
-                                >
-                                  Code #{index + 1}
-                                </span>
-                              </div>
-                              <button
-                                onClick={() => handleDeleteCodeComment(codeComment.id)}
-                                className="transition-colors"
-                                style={{ color: 'var(--text-muted)' }}
-                                onMouseOver={(e) => e.currentTarget.style.color = 'var(--accent-error)'}
-                                onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
-                                title="Delete code comment"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                            <div
-                              className="text-xs mb-2 px-2 py-1 rounded font-mono break-words"
-                              style={{
-                                backgroundColor: '#1e1e1e',
-                                color: '#858585',
-                                wordBreak: 'break-word'
-                              }}
-                            >
-                              {codeComment.file_path}:{codeComment.line_start}
-                              {codeComment.line_end !== codeComment.line_start && `-${codeComment.line_end}`}
-                            </div>
-                            <p
-                              className="text-xs break-words"
-                              style={{
-                                color: 'var(--text-primary)',
-                                wordBreak: 'break-word'
-                              }}
-                            >
-                              {codeComment.user_comment}
-                            </p>
+                            {codeComment.file_path}:{codeComment.line_start}
+                            {codeComment.line_end !== codeComment.line_start && `-${codeComment.line_end}`}
                           </div>
-                        ))}
-                      </div>
-                    )}
+                          <p
+                            className="text-xs break-words"
+                            style={{
+                              color: 'var(--text-primary)',
+                              wordBreak: 'break-word'
+                            }}
+                          >
+                            {codeComment.user_comment}
+                          </p>
+                        </div>
+                      ))
+                    })()}
                 </div>
               </div>
             </div>
