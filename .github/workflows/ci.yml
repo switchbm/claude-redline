@@ -63,10 +63,11 @@ jobs:
       - name: Build package
         run: uv build
 
+      - name: Install dependencies
+        run: uv sync --dev
+
       - name: Check package
-        run: |
-          pip install twine
-          twine check dist/*
+        run: uv run twine check dist/*
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
