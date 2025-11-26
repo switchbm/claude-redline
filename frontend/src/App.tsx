@@ -282,16 +282,8 @@ function App() {
       })
 
       setCommentPositions(newPositions)
-
-      // Also track pending highlight position
-      const pendingMark = markdownContainerRef.current?.querySelector('mark.theme-highlight-pending')
-      if (pendingMark) {
-        const pendingRect = pendingMark.getBoundingClientRect()
-        const relativeTop = pendingRect.top - containerRect.top
-        setPendingHighlightPosition(Math.max(0, relativeTop))
-      } else {
-        setPendingHighlightPosition(null)
-      }
+      // Note: pendingHighlightPosition is captured at selection time (handleSelection)
+      // and should not be overridden here to avoid race conditions
     }
 
     // Update positions after a short delay to ensure DOM is rendered
@@ -327,6 +319,11 @@ function App() {
         return
       }
 
+      // Check if selection is inside the markdown container
+      if (!markdownContainerRef.current?.contains(selection.anchorNode)) {
+        return
+      }
+
       const range = selection.getRangeAt(0)
 
       // Get surrounding context to uniquely identify this occurrence
@@ -340,6 +337,14 @@ function App() {
       const contextStart = Math.max(0, startOffset - 30)
       const contextEnd = Math.min(fullText.length, endOffset + 30)
       const context = fullText.slice(contextStart, contextEnd)
+
+      // Calculate position for comment alignment - get position relative to markdown container
+      const rangeRect = range.getBoundingClientRect()
+      const containerRect = markdownContainerRef.current?.getBoundingClientRect()
+      if (containerRect) {
+        const relativeTop = rangeRect.top - containerRect.top
+        setPendingHighlightPosition(Math.max(0, relativeTop))
+      }
 
       // Show comment input in sidebar
       setSelectedText(text)
