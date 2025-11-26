@@ -64,9 +64,9 @@ class ThemeDefinition(TypedDict):
     colors: ThemeColors
 
 
-# Default theme - Clean professional blue/gray
-DEFAULT_THEME: ThemeDefinition = {
-    "name": "default",
+# Clean theme - Professional blue/gray (formerly default)
+CLEAN_THEME: ThemeDefinition = {
+    "name": "clean",
     "description": "Clean professional theme with blue accents",
     "colors": {
         # Background colors
@@ -282,8 +282,8 @@ MINIMAL_THEME: ThemeDefinition = {
 
 # Theme registry - add new themes here
 THEMES: dict[str, ThemeDefinition] = {
-    "default": DEFAULT_THEME,
     "dark": DARK_THEME,
+    "clean": CLEAN_THEME,
     "forest": FOREST_THEME,
     "ocean": OCEAN_THEME,
     "sunset": SUNSET_THEME,
@@ -291,7 +291,7 @@ THEMES: dict[str, ThemeDefinition] = {
 }
 
 # Default theme name
-DEFAULT_THEME_NAME = "default"
+DEFAULT_THEME_NAME = "dark"
 
 
 def get_theme(name: str) -> ThemeDefinition:

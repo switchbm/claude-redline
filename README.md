@@ -67,44 +67,66 @@ Claude: → Continues to Phase 2...
 
 ## Quick Start
 
-### 1. Install (Choose One)
+### Claude Code Setup
 
-**Option A: Zero Install with uvx** (Recommended)
+**Option 1: Global Installation (Recommended)**
+
+This makes Redline available in ALL your Claude Code sessions:
+
 ```bash
-# Nothing to install! Just configure below.
+claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline"],"timeout":1200000}' -s user
 ```
 
-**Option B: Install Globally**
+- The `-s user` flag adds it to your global config (`~/.claude/settings.json`)
+- The `timeout` is set to 20 minutes (1200000ms) to allow thorough document review
+
+**Option 2: Project-Specific Installation**
+
+This makes Redline available only in a specific project directory:
+
 ```bash
-uv tool install git+https://github.com/switchbm/claude-redline
+# Run this from your project directory
+claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline"],"timeout":1200000}'
 ```
 
-### 2. Configure Claude
+This creates/updates `.mcp.json` in your project root.
+
+**Verify Installation**
+
+Start a new Claude Code session and run `/mcp` to verify Redline shows as "connected":
+
+```
+> /mcp
+  redline: connected
+```
+
+---
+
+### Local Development Setup
+
+If you're developing Redline locally or want to run from source:
+
+```bash
+# Clone and install
+git clone https://github.com/switchbm/claude-redline.git
+cd claude-redline
+uv sync --dev
+
+# Add to Claude Code (global)
+claude mcp add-json redline '{"type":"stdio","command":"uv","args":["run","--directory","/path/to/claude-redline","redline"],"timeout":1200000}' -s user
+
+# Or project-specific (omit -s user)
+claude mcp add-json redline '{"type":"stdio","command":"uv","args":["run","--directory","/path/to/claude-redline","redline"],"timeout":1200000}'
+```
+
+Replace `/path/to/claude-redline` with your actual clone path.
+
+---
+
+### Claude Desktop Setup
 
 <details>
-<summary><strong>Claude Code (CLI)</strong></summary>
-
-Run this command:
-```bash
-claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline"]}'
-```
-
-Or add to your project's `.mcp.json`:
-```json
-{
-  "mcpServers": {
-    "redline": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline"]
-    }
-  }
-}
-```
-</details>
-
-<details>
-<summary><strong>Claude Desktop</strong></summary>
+<summary><strong>Click to expand Claude Desktop instructions</strong></summary>
 
 Add to your config file:
 
@@ -119,31 +141,34 @@ Add to your config file:
   "mcpServers": {
     "redline": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline"]
+      "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline"],
+      "timeout": 1200000
     }
   }
 }
 ```
+
+The `timeout` is set to 20 minutes (1200000ms) to allow thorough document review.
 </details>
 
-### 3. Choose a Theme (Optional)
+### Choose a Theme (Optional)
 
 Redline includes 6 built-in themes. Add `--theme <name>` to customize the look:
 
 | Theme | Description |
 |-------|-------------|
-| `default` | Clean professional blue/gray (default) |
-| `dark` | Modern dark mode for low-light environments |
+| `dark` | Modern dark mode (default) |
+| `clean` | Clean professional blue/gray |
 | `forest` | Nature-inspired with earthy green tones |
 | `ocean` | Calm oceanic with blue and teal accents |
 | `sunset` | Warm sunset with orange and amber tones |
 | `minimal` | Ultra-clean with subtle contrasts |
 
 <details>
-<summary><strong>Example: Dark Theme with Claude Code</strong></summary>
+<summary><strong>Example: Clean Theme with Claude Code</strong></summary>
 
 ```bash
-claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline","--theme","dark"]}'
+claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline","--theme","clean"],"timeout":1200000}' -s user
 ```
 
 Or in `.mcp.json`:
@@ -153,7 +178,8 @@ Or in `.mcp.json`:
     "redline": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline", "--theme", "dark"]
+      "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline", "--theme", "clean"],
+      "timeout": 1200000
     }
   }
 }
@@ -168,7 +194,8 @@ Or in `.mcp.json`:
   "mcpServers": {
     "redline": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline", "--theme", "ocean"]
+      "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline", "--theme", "ocean"],
+      "timeout": 1200000
     }
   }
 }
@@ -180,9 +207,9 @@ Or in `.mcp.json`:
 uvx --from git+https://github.com/switchbm/claude-redline redline --list-themes
 ```
 
-### 4. Use It
+### Use It
 
-Tell Claude to present plans and summaries for review:
+Tell Claude to present plans and summaries for review. Trigger words include "redline", "review", "present for review":
 
 ```
 Build a REST API for user management. Present your implementation
@@ -190,6 +217,45 @@ plan for review first, then show me phase summaries as you complete them.
 ```
 
 That's it! Claude will automatically open your browser for reviews at the right moments.
+
+> **Note**: Redline has a 20-minute timeout for reviews. Take your time reviewing documents thoroughly - the browser will stay open until you click "Submit Review".
+
+---
+
+## Troubleshooting
+
+<details>
+<summary><strong>MCP Timeout Errors</strong></summary>
+
+If you see "MCP error -32001: Request timed out", your MCP configuration may be missing the timeout setting.
+
+**Solution**: Re-add Redline with the 20-minute timeout (the setup commands above include this by default):
+
+```bash
+claude mcp remove redline
+claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline"],"timeout":1200000}' -s user
+```
+
+The `timeout` value is in milliseconds (1200000 = 20 minutes).
+</details>
+
+<details>
+<summary><strong>Browser Doesn't Open</strong></summary>
+
+If the browser doesn't open automatically:
+1. Manually navigate to `http://localhost:6380`
+2. Check that port 6380 isn't blocked by a firewall
+3. Ensure you have a default browser configured
+</details>
+
+<details>
+<summary><strong>Redline Not Appearing in /mcp</strong></summary>
+
+1. Restart Claude Code after adding the MCP server
+2. Check your config with `claude mcp list`
+3. Verify the JSON syntax in your command
+4. For global install, ensure you used `-s user`
+</details>
 
 ---
 

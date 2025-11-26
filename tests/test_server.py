@@ -40,6 +40,7 @@ def reset_app_state() -> None:
     """Reset app state before each test."""
     app_state["content"] = ""
     app_state["future"] = None
+    app_state["loop"] = None
     app_state["theme"] = DEFAULT_THEME_NAME
     app_state["base_dir"] = None
     app_state["diff_data"] = {}
@@ -51,7 +52,7 @@ class TestThemes:
     def test_list_themes(self) -> None:
         """Test listing available themes."""
         themes = list_themes()
-        assert "default" in themes
+        assert "clean" in themes
         assert "dark" in themes
         assert "forest" in themes
         assert "ocean" in themes
@@ -59,10 +60,10 @@ class TestThemes:
         assert "minimal" in themes
         assert len(themes) == 6
 
-    def test_get_theme_default(self) -> None:
-        """Test getting the default theme."""
-        theme = get_theme("default")
-        assert theme["name"] == "default"
+    def test_get_theme_clean(self) -> None:
+        """Test getting the clean theme."""
+        theme = get_theme("clean")
+        assert theme["name"] == "clean"
         assert "description" in theme
         assert "colors" in theme
         assert "bg_page" in theme["colors"]
@@ -90,8 +91,8 @@ class TestThemes:
         """Test getting theme descriptions."""
         descriptions = get_theme_descriptions()
         assert len(descriptions) == 6
-        assert "default" in descriptions
-        assert "professional" in descriptions["default"].lower()
+        assert "clean" in descriptions
+        assert "professional" in descriptions["clean"].lower()
 
     def test_all_themes_have_required_colors(self) -> None:
         """Test that all themes have all required color keys."""
@@ -115,12 +116,12 @@ class TestConfigEndpoint:
     """Tests for the /api/config endpoint."""
 
     def test_get_config_default_theme(self, client: TestClient) -> None:
-        """Test getting config with default theme."""
+        """Test getting config with default theme (dark)."""
         response = client.get("/api/config")
         assert response.status_code == 200
         data = response.json()
         assert "theme" in data
-        assert data["theme"]["name"] == "default"
+        assert data["theme"]["name"] == "dark"
         assert "available_themes" in data
         assert len(data["available_themes"]) == 6
 
@@ -554,6 +555,138 @@ index abc123..def456 100644
 
             result = parse_git_diff("/some/path")
             assert result == {}
+
+
+class TestCodeComments:
+    """Tests for code comment functionality."""
+
+    def test_submit_review_with_code_comments(self, client: TestClient) -> None:
+        """Test submitting a review with code comments."""
+        loop = asyncio.new_event_loop()
+        future = loop.create_future()
+        app_state["future"] = future
+        app_state["loop"] = loop
+
+        payload = {
+            "comments": [],
+            "code_comments": [
+                {
+                    "id": "code-123",
+                    "file_path": "src/test.py",
+                    "line_start": 10,
+                    "line_end": 15,
+                    "quote": "def test_function():",
+                    "user_comment": "Consider adding docstring",
+                    "timestamp": 1234567890,
+                }
+            ],
+            "user_overall_comment": "Good code, minor suggestions",
+        }
+
+        response = client.post("/api/submit", json=payload)
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+        assert future.done()
+        result = future.result()
+        assert "code_comments" in result
+        assert len(result["code_comments"]) == 1
+        assert result["code_comments"][0]["file_path"] == "src/test.py"
+        assert result["code_comments"][0]["line_start"] == 10
+
+        loop.close()
+
+    def test_submit_review_with_both_comment_types(self, client: TestClient) -> None:
+        """Test submitting a review with both document and code comments."""
+        loop = asyncio.new_event_loop()
+        future = loop.create_future()
+        app_state["future"] = future
+        app_state["loop"] = loop
+
+        payload = {
+            "comments": [
+                {
+                    "id": "doc-123",
+                    "quote": "test phrase",
+                    "full_line_text": "this is a test phrase in the doc",
+                    "user_comment": "clarify this",
+                    "timestamp": 1234567890,
+                    "context": "surrounding text for test phrase context",
+                }
+            ],
+            "code_comments": [
+                {
+                    "id": "code-456",
+                    "file_path": "src/main.py",
+                    "line_start": 42,
+                    "line_end": 42,
+                    "quote": "x = y + z",
+                    "user_comment": "Consider using descriptive variable names",
+                    "timestamp": 1234567891,
+                }
+            ],
+            "user_overall_comment": "Review complete",
+        }
+
+        response = client.post("/api/submit", json=payload)
+        assert response.status_code == 200
+        result = future.result()
+        assert len(result["comments"]) == 1
+        assert len(result["code_comments"]) == 1
+        assert result["comments"][0]["context"] == "surrounding text for test phrase context"
+        assert result["code_comments"][0]["line_start"] == 42
+
+        loop.close()
+
+    def test_submit_review_empty_code_comments(self, client: TestClient) -> None:
+        """Test submitting with empty code_comments array."""
+        loop = asyncio.new_event_loop()
+        future = loop.create_future()
+        app_state["future"] = future
+        app_state["loop"] = loop
+
+        payload = {
+            "comments": [],
+            "code_comments": [],
+            "user_overall_comment": "LGTM",
+        }
+
+        response = client.post("/api/submit", json=payload)
+        assert response.status_code == 200
+        result = future.result()
+        assert result["code_comments"] == []
+
+        loop.close()
+
+    def test_submit_review_multiline_code_comment(self, client: TestClient) -> None:
+        """Test submitting a code comment spanning multiple lines."""
+        loop = asyncio.new_event_loop()
+        future = loop.create_future()
+        app_state["future"] = future
+        app_state["loop"] = loop
+
+        payload = {
+            "comments": [],
+            "code_comments": [
+                {
+                    "id": "multi-line-123",
+                    "file_path": "src/utils.py",
+                    "line_start": 100,
+                    "line_end": 150,
+                    "quote": "class MyClass:\n    def __init__(self):\n        pass",
+                    "user_comment": "This class needs refactoring",
+                    "timestamp": 1234567890,
+                }
+            ],
+            "user_overall_comment": None,
+        }
+
+        response = client.post("/api/submit", json=payload)
+        assert response.status_code == 200
+        result = future.result()
+        assert result["code_comments"][0]["line_start"] == 100
+        assert result["code_comments"][0]["line_end"] == 150
+
+        loop.close()
 
 
 class TestMCPToolsWithBaseDir:

@@ -1,10 +1,27 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { Highlight, themes } from 'prism-react-renderer'
-import { X, FileCode, Copy, Check } from 'lucide-react'
+import { X, FileCode, Copy, Check, MessageSquare } from 'lucide-react'
 
 interface DiffData {
   added_lines: number[]
   removed_lines: number[]
+}
+
+interface CodeComment {
+  id: string
+  file_path: string
+  line_start: number
+  line_end: number
+  quote: string
+  user_comment: string
+  timestamp: number
+}
+
+interface PendingCodeComment {
+  file_path: string
+  line_start: number
+  line_end: number
+  quote: string
 }
 
 interface CodeViewerProps {
@@ -13,6 +30,9 @@ interface CodeViewerProps {
   lineEnd?: number
   diffData: Record<string, DiffData>
   onClose: () => void
+  onCodeSelection?: (filePath: string, lineStart: number, lineEnd: number, quote: string) => void
+  codeComments?: CodeComment[]
+  pendingCodeComment?: PendingCodeComment | null
 }
 
 interface FileData {
@@ -23,13 +43,74 @@ interface FileData {
   absolute_path: string
 }
 
-export function CodeViewer({ filePath, lineNumber, lineEnd, diffData, onClose }: CodeViewerProps) {
+export function CodeViewer({
+  filePath,
+  lineNumber,
+  lineEnd,
+  diffData,
+  onClose,
+  onCodeSelection,
+  codeComments = [],
+  pendingCodeComment
+}: CodeViewerProps) {
   const [fileData, setFileData] = useState<FileData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const lineRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // Handle text selection in code
+  const handleMouseUp = useCallback(() => {
+    if (!filePath || !onCodeSelection) return
+
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed) return
+
+    const selectedText = selection.toString().trim()
+    if (!selectedText) return
+
+    // Check if selection is within the code container
+    const range = selection.getRangeAt(0)
+    if (!containerRef.current?.contains(range.commonAncestorContainer)) return
+
+    // Find the line numbers from the selection
+    const startContainer = range.startContainer
+    const endContainer = range.endContainer
+
+    // Walk up to find line elements
+    const findLineNumber = (node: Node): number | null => {
+      let current: Node | null = node
+      while (current && current !== containerRef.current) {
+        if (current instanceof HTMLElement) {
+          const lineAttr = current.getAttribute('data-line-number')
+          if (lineAttr) return parseInt(lineAttr, 10)
+        }
+        current = current.parentNode
+      }
+      return null
+    }
+
+    const startLine = findLineNumber(startContainer)
+    const endLine = findLineNumber(endContainer)
+
+    if (startLine && endLine) {
+      onCodeSelection(filePath, Math.min(startLine, endLine), Math.max(startLine, endLine), selectedText)
+      // Clear selection after capturing
+      setTimeout(() => selection.removeAllRanges(), 50)
+    }
+  }, [filePath, onCodeSelection])
+
+  // Check if a line has a comment
+  const getLineComment = (lineNum: number): CodeComment | undefined => {
+    return codeComments.find(c => lineNum >= c.line_start && lineNum <= c.line_end)
+  }
+
+  // Check if a line is pending comment
+  const isLinePending = (lineNum: number): boolean => {
+    if (!pendingCodeComment) return false
+    return lineNum >= pendingCodeComment.line_start && lineNum <= pendingCodeComment.line_end
+  }
 
   // Fetch file content when filePath changes
   useEffect(() => {
@@ -249,6 +330,7 @@ export function CodeViewer({ filePath, lineNumber, lineEnd, diffData, onClose }:
         ref={containerRef}
         className="flex-1 overflow-auto"
         style={{ backgroundColor: '#1e1e1e' }}
+        onMouseUp={handleMouseUp}
       >
         <Highlight
           theme={themes.vsDark}
@@ -273,25 +355,39 @@ export function CodeViewer({ filePath, lineNumber, lineEnd, diffData, onClose }:
                     : lineNum === lineNumber
                 )
                 const isAddedLine = fileDiff?.added_lines.includes(lineNum)
+                const lineComment = getLineComment(lineNum)
+                const isPending = isLinePending(lineNum)
+
+                // Determine line highlighting priority: pending > comment > target > diff
+                const getLineBackground = () => {
+                  if (isPending) return 'rgba(254, 240, 138, 0.3)' // yellow for pending
+                  if (lineComment) return 'rgba(254, 240, 138, 0.2)' // lighter yellow for commented
+                  if (isTargetLine) return 'rgba(255, 213, 79, 0.15)'
+                  if (isAddedLine) return 'rgba(46, 160, 67, 0.2)'
+                  return 'transparent'
+                }
+
+                const getLineBorder = () => {
+                  if (isPending) return '3px solid #fbbf24' // amber for pending
+                  if (lineComment) return '3px solid #f59e0b' // orange for commented
+                  if (isTargetLine) return '3px solid #ffd54f'
+                  if (isAddedLine) return '3px solid #2ea043'
+                  return '3px solid transparent'
+                }
 
                 return (
                   <div
+                    data-line-number={lineNum}
                     key={i}
                     ref={isTargetLine && lineNum === lineNumber ? lineRef : null}
                     {...getLineProps({ line })}
                     style={{
                       display: 'flex',
-                      backgroundColor: isTargetLine
-                        ? 'rgba(255, 213, 79, 0.15)'
-                        : isAddedLine
-                          ? 'rgba(46, 160, 67, 0.2)'
-                          : 'transparent',
-                      borderLeft: isTargetLine
-                        ? '3px solid #ffd54f'
-                        : isAddedLine
-                          ? '3px solid #2ea043'
-                          : '3px solid transparent',
+                      backgroundColor: getLineBackground(),
+                      borderLeft: getLineBorder(),
+                      animation: isPending ? 'pulse-code 1.5s ease-in-out infinite' : undefined,
                     }}
+                    title={lineComment ? `Comment: ${lineComment.user_comment}` : undefined}
                   >
                     {/* Line number */}
                     <span
@@ -300,25 +396,37 @@ export function CodeViewer({ filePath, lineNumber, lineEnd, diffData, onClose }:
                         width: '3.5rem',
                         textAlign: 'right',
                         paddingRight: '1rem',
-                        color: isTargetLine ? '#ffd54f' : '#858585',
+                        color: isPending || lineComment
+                          ? '#fbbf24'
+                          : isTargetLine
+                            ? '#ffd54f'
+                            : '#858585',
                         userSelect: 'none',
                         flexShrink: 0,
                       }}
                     >
                       {lineNum}
                     </span>
-                    {/* Diff indicator */}
+                    {/* Comment/Diff indicator */}
                     <span
                       style={{
                         display: 'inline-block',
-                        width: '1rem',
+                        width: '1.5rem',
                         textAlign: 'center',
-                        color: isAddedLine ? '#2ea043' : 'transparent',
                         userSelect: 'none',
                         flexShrink: 0,
                       }}
                     >
-                      {isAddedLine ? '+' : ' '}
+                      {lineComment ? (
+                        <MessageSquare
+                          className="w-3 h-3 inline"
+                          style={{ color: '#f59e0b' }}
+                        />
+                      ) : isAddedLine ? (
+                        <span style={{ color: '#2ea043' }}>+</span>
+                      ) : (
+                        ' '
+                      )}
                     </span>
                     {/* Code content */}
                     <span style={{ flex: 1, paddingRight: '1rem' }}>

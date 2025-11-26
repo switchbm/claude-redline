@@ -7,41 +7,41 @@
  *
  * These variables are set dynamically by the theme system.
  * Default values are provided for initial render before the
- * theme is fetched from the server.
+ * theme is fetched from the server. Defaults to dark theme.
  */
 :root {
   /* Background colors */
-  --bg-page: #f9fafb;
-  --bg-card: #ffffff;
-  --bg-card-hover: #f3f4f6;
-  --bg-input: #ffffff;
-  --bg-code: #f3f4f6;
-  --bg-highlight: #fef08a;
-  --bg-highlight-hover: #fde047;
+  --bg-page: #0f172a;
+  --bg-card: #1e293b;
+  --bg-card-hover: #334155;
+  --bg-input: #1e293b;
+  --bg-code: #0f172a;
+  --bg-highlight: #854d0e;
+  --bg-highlight-hover: #a16207;
 
   /* Text colors */
-  --text-primary: #111827;
-  --text-secondary: #4b5563;
-  --text-muted: #9ca3af;
-  --text-inverse: #ffffff;
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
+  --text-inverse: #0f172a;
 
   /* Accent colors */
-  --accent-primary: #2563eb;
-  --accent-primary-hover: #1d4ed8;
-  --accent-secondary: #6b7280;
-  --accent-success: #22c55e;
-  --accent-error: #ef4444;
-  --accent-warning: #f59e0b;
+  --accent-primary: #3b82f6;
+  --accent-primary-hover: #60a5fa;
+  --accent-secondary: #94a3b8;
+  --accent-success: #4ade80;
+  --accent-error: #f87171;
+  --accent-warning: #fbbf24;
 
   /* Border colors */
-  --border-default: #e5e7eb;
-  --border-light: #f3f4f6;
+  --border-default: #334155;
+  --border-light: #1e293b;
   --border-accent: #3b82f6;
 
   /* Shadow */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
 }
 
 body {
@@ -49,6 +49,8 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--bg-page);
@@ -62,40 +64,40 @@ body {
 }
 
 .prose h1 {
-  @apply text-3xl font-bold mt-8 mb-4;
-  color: var(--text-primary);
-}
-
-.prose h2 {
   @apply text-2xl font-bold mt-6 mb-3;
   color: var(--text-primary);
 }
 
+.prose h2 {
+  @apply text-xl font-bold mt-5 mb-2;
+  color: var(--text-primary);
+}
+
 .prose h3 {
-  @apply text-xl font-bold mt-4 mb-2;
+  @apply text-lg font-bold mt-4 mb-2;
   color: var(--text-primary);
 }
 
 .prose p {
-  @apply mb-4 leading-7;
+  @apply mb-3 leading-6;
 }
 
 .prose ul,
 .prose ol {
-  @apply mb-4 ml-6;
+  @apply mb-3 ml-5;
 }
 
 .prose li {
-  @apply mb-2;
+  @apply mb-1;
 }
 
 .prose code {
-  @apply px-1 py-0.5 rounded text-sm font-mono;
+  @apply px-1 py-0.5 rounded text-xs font-mono;
   background-color: var(--bg-code);
 }
 
 .prose pre {
-  @apply p-4 rounded-lg overflow-x-auto mb-4;
+  @apply p-3 rounded-lg overflow-x-auto mb-3 text-sm;
   background-color: var(--bg-code);
 }
 
@@ -265,4 +267,32 @@ mark.theme-highlight {
 
 mark.theme-highlight:hover {
   background-color: var(--bg-highlight-hover);
+}
+
+/* Pending highlight (while comment box is open) */
+mark.theme-highlight-pending {
+  background-color: var(--bg-highlight);
+  padding: 0 0.25rem;
+  border-radius: 0.125rem;
+  cursor: pointer;
+  animation: pulse-highlight 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-highlight {
+  0%, 100% {
+    background-color: var(--bg-highlight);
+  }
+  50% {
+    background-color: var(--bg-highlight-hover);
+  }
+}
+
+/* Code comment pending animation */
+@keyframes pulse-code {
+  0%, 100% {
+    background-color: rgba(254, 240, 138, 0.3);
+  }
+  50% {
+    background-color: rgba(254, 240, 138, 0.5);
+  }
 }

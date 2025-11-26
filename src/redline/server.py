@@ -67,6 +67,7 @@ logger = logging.getLogger(__name__)
 app_state: dict[str, Any] = {
     "content": "",
     "future": None,
+    "loop": None,  # Event loop for thread-safe future resolution
     "theme": DEFAULT_THEME_NAME,
     "base_dir": None,  # Working directory for file resolution
     "diff_data": {},  # Git diff data: {file_path: {added_lines: [], removed_lines: []}}
@@ -332,10 +333,16 @@ async def submit_review(data: dict[str, Any]) -> JSONResponse:
     else:
         logger.info(f"Review submitted with {num_comments} inline comments")
 
-    # Resolve the future with the submitted data
+    # Resolve the future with the submitted data (thread-safe)
     future = app_state.get("future")
+    loop = app_state.get("loop")
     if future and isinstance(future, asyncio.Future) and not future.done():
-        future.set_result(data)
+        if loop and loop.is_running():
+            # Production: called from HTTP thread, use thread-safe method
+            loop.call_soon_threadsafe(future.set_result, data)
+        else:
+            # Tests or same-thread: direct call is safe
+            future.set_result(data)
 
     return JSONResponse({"status": "ok"})
 
@@ -409,10 +416,12 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="request_human_review",
             description=(
-                "REQUIRED: Request human review via browser interface. "
+                "REQUIRED: Request human review via browser interface. Also known as 'redline' - "
+                "when user asks for a 'redline document', 'redline doc', or 'redline review', use this tool. "
                 "MUST be called in these situations: "
                 "1. BEFORE implementing - when proposing an implementation plan, present the plan for review "
-                "2. AFTER completing a phase - when providing a detailed walkthrough/summary, present it for review. "
+                "2. AFTER completing a phase - when providing a detailed walkthrough/summary, present it for review "
+                "3. When user asks to 'create a document for review' or 'present for review'. "
                 "Opens a browser where the user can highlight text and add comments. "
                 "Returns structured feedback as JSON with all user comments and highlighted sections. "
                 "This blocks execution until the user submits their review.\n\n"
@@ -494,6 +503,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     loop = asyncio.get_event_loop()
     future: asyncio.Future[Any] = loop.create_future()
     app_state["future"] = future
+    app_state["loop"] = loop  # Store loop for thread-safe resolution
 
     # Start HTTP server if not running
     start_http_server_if_needed()
@@ -506,9 +516,22 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     except Exception as e:
         logger.error(f"Failed to open browser: {e}")
 
-    # Wait for the user to submit their review
-    logger.info("Waiting for user review...")
-    result = await future
+    # Wait for the user to submit their review (20 minute timeout)
+    # This generous timeout allows for thorough document review
+    REVIEW_TIMEOUT_SECONDS = 20 * 60  # 20 minutes
+    logger.info(f"Waiting for user review (timeout: {REVIEW_TIMEOUT_SECONDS // 60} minutes)...")
+    try:
+        result = await asyncio.wait_for(future, timeout=REVIEW_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        logger.error("Review timed out after 20 minutes")
+        return [TextContent(
+            type="text",
+            text=json.dumps({
+                "error": "Review timed out",
+                "message": "The review window was open for 20 minutes without a submission. "
+                           "Please try again and submit your review when ready."
+            }, indent=2)
+        )]
 
     logger.info("Review received!")
 

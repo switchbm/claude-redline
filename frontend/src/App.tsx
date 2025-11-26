@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
-import { CheckCircle, MessageSquare, X, Send, Edit2, FileText, GripVertical, Code } from 'lucide-react'
+import { CheckCircle, MessageSquare, X, Send, Edit2, FileText, GripVertical, Code, FileCode } from 'lucide-react'
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { CodeViewer } from './components/CodeViewer'
@@ -17,11 +17,24 @@ interface Comment {
   full_line_text: string
   user_comment: string
   timestamp: number
+  context: string  // Surrounding context to uniquely identify this occurrence
 }
 
-interface PopoverPosition {
-  top: number
-  left: number
+interface CodeComment {
+  id: string
+  file_path: string
+  line_start: number
+  line_end: number
+  quote: string
+  user_comment: string
+  timestamp: number
+}
+
+interface PendingCodeComment {
+  file_path: string
+  line_start: number
+  line_end: number
+  quote: string
 }
 
 interface CodeReference {
@@ -116,12 +129,18 @@ function App() {
   const [submitted, setSubmitted] = useState(false)
   const [selectedText, setSelectedText] = useState<string>('')
   const [showPopover, setShowPopover] = useState(false)
-  const [popoverPosition, setPopoverPosition] = useState<PopoverPosition>({ top: 0, left: 0 })
   const [commentText, setCommentText] = useState('')
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [showSubmitModal, setShowSubmitModal] = useState(false)
   const [overallComment, setOverallComment] = useState('')
   const [contentWithHighlights, setContentWithHighlights] = useState<string>('')
+  const [pendingHighlight, setPendingHighlight] = useState<{text: string, context: string} | null>(null)
+
+  // Code comments state
+  const [codeComments, setCodeComments] = useState<CodeComment[]>([])
+  const [pendingCodeComment, setPendingCodeComment] = useState<PendingCodeComment | null>(null)
+  const [codeCommentText, setCodeCommentText] = useState('')
+  const [showCodeCommentInput, setShowCodeCommentInput] = useState(false)
 
   // Code viewer state
   const [selectedCodeRef, setSelectedCodeRef] = useState<CodeReference | null>(null)
@@ -182,28 +201,57 @@ function App() {
     fetchDiff()
   }, [])
 
-  // Generate highlighted content when comments change
+  // Generate highlighted content when comments or pending highlight change
   useEffect(() => {
     if (!content) return
 
     let highlightedContent = content
 
-    // Sort comments by quote length (longest first) to avoid nested replacements
-    const sortedComments = [...comments].sort((a, b) => b.quote.length - a.quote.length)
+    // Sort comments by context length (longest first) to avoid nested replacements
+    const sortedComments = [...comments].sort((a, b) => (b.context?.length || 0) - (a.context?.length || 0))
 
     sortedComments.forEach((comment) => {
-      const escapedQuote = comment.quote.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const regex = new RegExp(`(${escapedQuote})`, 'g')
+      const escapedText = comment.quote.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-      // Wrap the quote with a special marker using theme highlight class
-      highlightedContent = highlightedContent.replace(
-        regex,
-        `<mark class="theme-highlight cursor-pointer" data-comment-id="${comment.id}" title="Click to view comment">$1</mark>`
-      )
+      // Use context-based matching if available, otherwise fall back to global
+      if (comment.context) {
+        const escapedContext = comment.context.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const contextRegex = new RegExp(`(${escapedContext})`)
+        highlightedContent = highlightedContent.replace(contextRegex, (match) => {
+          return match.replace(
+            new RegExp(`(${escapedText})`),
+            `<mark class="theme-highlight cursor-pointer" data-comment-id="${comment.id}" title="Click to view comment">$1</mark>`
+          )
+        })
+      } else {
+        // Fallback for comments without context (legacy)
+        const regex = new RegExp(`(${escapedText})`, 'g')
+        highlightedContent = highlightedContent.replace(
+          regex,
+          `<mark class="theme-highlight cursor-pointer" data-comment-id="${comment.id}" title="Click to view comment">$1</mark>`
+        )
+      }
     })
 
+    // Add pending highlight (temporary highlight while comment box is open)
+    // Use context to match only the specific occurrence, not all occurrences
+    if (pendingHighlight && !comments.some(c => c.quote === pendingHighlight.text && c.context === pendingHighlight.context)) {
+      const escapedContext = pendingHighlight.context.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const escapedText = pendingHighlight.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+      // Replace the text within its context (only first match of the full context)
+      const contextRegex = new RegExp(`(${escapedContext})`)
+      highlightedContent = highlightedContent.replace(contextRegex, (match) => {
+        // Within the matched context, wrap just the selected text
+        return match.replace(
+          new RegExp(`(${escapedText})`),
+          `<mark class="theme-highlight-pending cursor-pointer">$1</mark>`
+        )
+      })
+    }
+
     setContentWithHighlights(highlightedContent)
-  }, [content, comments])
+  }, [content, comments, pendingHighlight])
 
   // Handle text selection
   useEffect(() => {
@@ -224,21 +272,30 @@ function App() {
       }
 
       const range = selection.getRangeAt(0)
-      const rect = range.getBoundingClientRect()
 
-      // Position popover near the selection
+      // Get surrounding context to uniquely identify this occurrence
+      // Capture ~30 chars before and after the selection
+      const container = range.commonAncestorContainer
+      const fullText = container.textContent || ''
+      const startOffset = range.startOffset
+      const endOffset = range.endOffset
+
+      // Get context: 30 chars before + selected text + 30 chars after
+      const contextStart = Math.max(0, startOffset - 30)
+      const contextEnd = Math.min(fullText.length, endOffset + 30)
+      const context = fullText.slice(contextStart, contextEnd)
+
+      // Show comment input in sidebar
       setSelectedText(text)
-      setPopoverPosition({
-        top: rect.bottom + window.scrollY + 5,
-        left: rect.left + window.scrollX + rect.width / 2,
-      })
+      setPendingHighlight({ text, context })
       setShowPopover(true)
       setCommentText('')
 
-      // Focus textarea after a short delay
+      // Clear native selection so our React highlight is visible
       setTimeout(() => {
+        window.getSelection()?.removeAllRanges()
         textareaRef.current?.focus()
-      }, 100)
+      }, 50)
     }
 
     document.addEventListener('mouseup', handleSelection)
@@ -253,11 +310,12 @@ function App() {
         !popoverRef.current.contains(event.target as Node) &&
         showPopover
       ) {
-        // Clear selection
+        // Clear selection and pending highlight
         window.getSelection()?.removeAllRanges()
         setShowPopover(false)
         setSelectedText('')
         setCommentText('')
+        setPendingHighlight(null)
       }
     }
 
@@ -315,6 +373,7 @@ function App() {
         full_line_text: fullLine,
         user_comment: commentText.trim(),
         timestamp: Date.now(),
+        context: pendingHighlight?.context || '',  // Store context for unique matching
       }
       setComments([...comments, newComment])
     }
@@ -322,6 +381,7 @@ function App() {
     setShowPopover(false)
     setSelectedText('')
     setCommentText('')
+    setPendingHighlight(null)
 
     // Clear selection
     window.getSelection()?.removeAllRanges()
@@ -333,12 +393,6 @@ function App() {
     setCommentText(comment.user_comment)
     setShowPopover(true)
 
-    // Position popover in center of screen for editing
-    setPopoverPosition({
-      top: window.scrollY + window.innerHeight / 2 - 150,
-      left: window.scrollX + window.innerWidth / 2,
-    })
-
     setTimeout(() => {
       textareaRef.current?.focus()
     }, 100)
@@ -346,6 +400,41 @@ function App() {
 
   const handleDeleteComment = (id: string) => {
     setComments(comments.filter(c => c.id !== id))
+  }
+
+  // Code comment handlers
+  const handleCodeSelection = (filePath: string, lineStart: number, lineEnd: number, quote: string) => {
+    setPendingCodeComment({ file_path: filePath, line_start: lineStart, line_end: lineEnd, quote })
+    setShowCodeCommentInput(true)
+    setCodeCommentText('')
+  }
+
+  const handleSaveCodeComment = () => {
+    if (!codeCommentText.trim() || !pendingCodeComment) return
+
+    const newCodeComment: CodeComment = {
+      id: crypto.randomUUID(),
+      file_path: pendingCodeComment.file_path,
+      line_start: pendingCodeComment.line_start,
+      line_end: pendingCodeComment.line_end,
+      quote: pendingCodeComment.quote,
+      user_comment: codeCommentText.trim(),
+      timestamp: Date.now(),
+    }
+    setCodeComments([...codeComments, newCodeComment])
+    setShowCodeCommentInput(false)
+    setPendingCodeComment(null)
+    setCodeCommentText('')
+  }
+
+  const handleCancelCodeComment = () => {
+    setShowCodeCommentInput(false)
+    setPendingCodeComment(null)
+    setCodeCommentText('')
+  }
+
+  const handleDeleteCodeComment = (id: string) => {
+    setCodeComments(codeComments.filter(c => c.id !== id))
   }
 
   const handleSubmit = () => {
@@ -359,12 +448,13 @@ function App() {
     try {
       // Auto-populate "LGTM" if no comments and no overall comment
       const finalOverallComment =
-        (comments.length === 0 && !overallComment.trim())
+        (comments.length === 0 && codeComments.length === 0 && !overallComment.trim())
           ? 'LGTM'
           : (overallComment.trim() || null)
 
       const payload = {
         comments,
+        code_comments: codeComments,
         user_overall_comment: finalOverallComment,
       }
 
@@ -394,6 +484,7 @@ function App() {
     setEditingCommentId(null)
     setSelectedText('')
     setCommentText('')
+    setPendingHighlight(null)
     window.getSelection()?.removeAllRanges()
   }
 
@@ -639,19 +730,187 @@ function App() {
               {/* Comments Sidebar */}
               <div className="lg:col-span-1">
                 <div
-                  className="rounded-lg p-6 sticky top-24"
+                  className="rounded-lg p-4 sticky top-24"
                   style={{
                     backgroundColor: 'var(--bg-card)',
                     boxShadow: 'var(--shadow-sm)'
                   }}
                 >
                   <h2
-                    className="text-lg font-bold mb-4"
+                    className="text-base font-bold mb-3"
                     style={{ color: 'var(--text-primary)' }}
                   >
                     Comments
                   </h2>
-                  {comments.length === 0 ? (
+
+                  {/* Inline Comment Input (shown when text is selected) */}
+                  {showPopover && (
+                    <div
+                      className="border rounded-lg p-3 mb-4"
+                      style={{
+                        borderColor: 'var(--accent-primary)',
+                        backgroundColor: 'var(--bg-page)'
+                      }}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span
+                          className="text-xs font-medium"
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          {editingCommentId ? 'Edit Comment' : 'New Comment'}
+                        </span>
+                        <button
+                          onClick={handleCancelEdit}
+                          className="text-xs transition-colors"
+                          style={{ color: 'var(--text-muted)' }}
+                          onMouseOver={(e) => e.currentTarget.style.color = 'var(--accent-error)'}
+                          onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <blockquote
+                        className="text-xs italic border-l-2 pl-2 mb-2 py-1 max-h-16 overflow-y-auto"
+                        style={{
+                          color: 'var(--text-secondary)',
+                          borderColor: 'var(--accent-warning)',
+                          backgroundColor: 'var(--bg-highlight)'
+                        }}
+                      >
+                        "{selectedText}"
+                      </blockquote>
+                      <textarea
+                        ref={textareaRef}
+                        value={commentText}
+                        onChange={(e) => setCommentText(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Add your comment..."
+                        className="w-full px-2 py-1.5 border rounded text-sm focus:ring-1 focus:border-transparent resize-none"
+                        style={{
+                          backgroundColor: 'var(--bg-input)',
+                          borderColor: 'var(--border-default)',
+                          color: 'var(--text-primary)'
+                        }}
+                        rows={2}
+                      />
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={handleSaveComment}
+                          disabled={!commentText.trim()}
+                          className="flex-1 px-2 py-1 rounded text-xs font-medium transition-colors"
+                          style={{
+                            backgroundColor: commentText.trim() ? 'var(--accent-primary)' : 'var(--border-default)',
+                            color: commentText.trim() ? 'var(--text-inverse)' : 'var(--text-muted)',
+                            cursor: commentText.trim() ? 'pointer' : 'not-allowed'
+                          }}
+                        >
+                          {editingCommentId ? 'Update' : 'Save'}
+                        </button>
+                        <button
+                          onClick={handleCancelEdit}
+                          className="px-2 py-1 rounded text-xs font-medium transition-colors"
+                          style={{
+                            backgroundColor: 'var(--bg-card-hover)',
+                            color: 'var(--text-secondary)'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Code Comment Input (shown when code is selected) */}
+                  {showCodeCommentInput && pendingCodeComment && (
+                    <div
+                      className="border rounded-lg p-3 mb-4"
+                      style={{
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'var(--bg-page)'
+                      }}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span
+                          className="text-xs font-medium flex items-center gap-1"
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          <FileCode className="w-3 h-3" />
+                          Code Comment
+                        </span>
+                        <button
+                          onClick={handleCancelCodeComment}
+                          className="text-xs transition-colors"
+                          style={{ color: 'var(--text-muted)' }}
+                          onMouseOver={(e) => e.currentTarget.style.color = 'var(--accent-error)'}
+                          onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <div
+                        className="text-xs mb-2 px-2 py-1 rounded font-mono"
+                        style={{
+                          backgroundColor: '#1e1e1e',
+                          color: '#d4d4d4'
+                        }}
+                      >
+                        <div style={{ color: '#858585' }}>
+                          {pendingCodeComment.file_path}:{pendingCodeComment.line_start}
+                          {pendingCodeComment.line_end !== pendingCodeComment.line_start && `-${pendingCodeComment.line_end}`}
+                        </div>
+                        <div className="max-h-16 overflow-y-auto whitespace-pre-wrap break-all">
+                          {pendingCodeComment.quote.slice(0, 200)}{pendingCodeComment.quote.length > 200 ? '...' : ''}
+                        </div>
+                      </div>
+                      <textarea
+                        value={codeCommentText}
+                        onChange={(e) => setCodeCommentText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                            e.preventDefault()
+                            handleSaveCodeComment()
+                          } else if (e.key === 'Escape') {
+                            handleCancelCodeComment()
+                          }
+                        }}
+                        placeholder="Add your code comment..."
+                        className="w-full px-2 py-1.5 border rounded text-sm focus:ring-1 focus:border-transparent resize-none"
+                        style={{
+                          backgroundColor: 'var(--bg-input)',
+                          borderColor: 'var(--border-default)',
+                          color: 'var(--text-primary)'
+                        }}
+                        rows={2}
+                        autoFocus
+                      />
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={handleSaveCodeComment}
+                          disabled={!codeCommentText.trim()}
+                          className="flex-1 px-2 py-1 rounded text-xs font-medium transition-colors"
+                          style={{
+                            backgroundColor: codeCommentText.trim() ? '#f59e0b' : 'var(--border-default)',
+                            color: codeCommentText.trim() ? 'white' : 'var(--text-muted)',
+                            cursor: codeCommentText.trim() ? 'pointer' : 'not-allowed'
+                          }}
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={handleCancelCodeComment}
+                          className="px-2 py-1 rounded text-xs font-medium transition-colors"
+                          style={{
+                            backgroundColor: 'var(--bg-card-hover)',
+                            color: 'var(--text-secondary)'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {comments.length === 0 && codeComments.length === 0 && !showPopover && !showCodeCommentInput ? (
                     <p
                       className="text-sm italic"
                       style={{ color: 'var(--text-muted)' }}
@@ -659,11 +918,12 @@ function App() {
                       No comments yet. Select text to add one.
                     </p>
                   ) : (
-                    <div className="space-y-4">
+                    <div className="space-y-3">
+                      {/* Document Comments */}
                       {comments.map((comment, index) => (
                         <div
                           key={comment.id}
-                          className="border rounded-lg p-4 transition-shadow hover:shadow-md"
+                          className="border rounded-lg p-3 transition-shadow hover:shadow-md overflow-hidden"
                           style={{ borderColor: 'var(--border-default)' }}
                         >
                           <div className="flex items-start justify-between mb-2">
@@ -703,20 +963,79 @@ function App() {
                             </div>
                           </div>
                           <blockquote
-                            className="text-sm italic border-l-2 pl-3 mb-2 py-1 rounded"
+                            className="text-xs italic border-l-2 pl-2 mb-2 py-1 rounded break-words"
                             style={{
                               color: 'var(--text-secondary)',
                               borderColor: 'var(--accent-warning)',
-                              backgroundColor: 'var(--bg-highlight)'
+                              backgroundColor: 'var(--bg-highlight)',
+                              wordBreak: 'break-word',
+                              overflowWrap: 'anywhere'
                             }}
                           >
                             "{comment.quote}"
                           </blockquote>
                           <p
-                            className="text-sm"
-                            style={{ color: 'var(--text-primary)' }}
+                            className="text-xs break-words"
+                            style={{
+                              color: 'var(--text-primary)',
+                              wordBreak: 'break-word'
+                            }}
                           >
                             {comment.user_comment}
+                          </p>
+                        </div>
+                      ))}
+
+                      {/* Code Comments */}
+                      {codeComments.map((codeComment, index) => (
+                        <div
+                          key={codeComment.id}
+                          className="border rounded-lg p-3 transition-shadow hover:shadow-md overflow-hidden"
+                          style={{ borderColor: '#f59e0b' }}
+                        >
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <FileCode
+                                className="w-4 h-4"
+                                style={{ color: '#f59e0b' }}
+                              />
+                              <span
+                                className="text-xs"
+                                style={{ color: 'var(--text-muted)' }}
+                              >
+                                Code #{index + 1}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteCodeComment(codeComment.id)}
+                              className="transition-colors"
+                              style={{ color: 'var(--text-muted)' }}
+                              onMouseOver={(e) => e.currentTarget.style.color = 'var(--accent-error)'}
+                              onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                              title="Delete code comment"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <div
+                            className="text-xs mb-2 px-2 py-1 rounded font-mono break-words"
+                            style={{
+                              backgroundColor: '#1e1e1e',
+                              color: '#858585',
+                              wordBreak: 'break-word'
+                            }}
+                          >
+                            {codeComment.file_path}:{codeComment.line_start}
+                            {codeComment.line_end !== codeComment.line_start && `-${codeComment.line_end}`}
+                          </div>
+                          <p
+                            className="text-xs break-words"
+                            style={{
+                              color: 'var(--text-primary)',
+                              wordBreak: 'break-word'
+                            }}
+                          >
+                            {codeComment.user_comment}
                           </p>
                         </div>
                       ))}
@@ -760,101 +1079,13 @@ function App() {
               lineEnd={selectedCodeRef?.lineEnd}
               diffData={diffData}
               onClose={handleCloseCodeViewer}
+              onCodeSelection={handleCodeSelection}
+              codeComments={codeComments.filter(c => c.file_path === selectedCodeRef?.filePath)}
+              pendingCodeComment={pendingCodeComment?.file_path === selectedCodeRef?.filePath ? pendingCodeComment : null}
             />
           </div>
         )}
       </div>
-
-      {/* Comment Popover */}
-      {showPopover && (
-        <div
-          ref={popoverRef}
-          className="fixed z-50 rounded-lg border p-4 w-80"
-          style={{
-            top: `${popoverPosition.top}px`,
-            left: `${popoverPosition.left - 160}px`,
-            backgroundColor: 'var(--bg-card)',
-            borderColor: 'var(--border-default)',
-            boxShadow: 'var(--shadow-lg)'
-          }}
-        >
-          <div className="mb-3">
-            <label
-              className="block text-sm font-medium mb-2"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              {editingCommentId ? 'Edit Comment' : 'Add Comment'}
-            </label>
-            <blockquote
-              className="text-xs italic border-l-2 pl-2 mb-3 max-h-20 overflow-y-auto"
-              style={{
-                color: 'var(--text-secondary)',
-                borderColor: 'var(--accent-primary)'
-              }}
-            >
-              "{selectedText}"
-            </blockquote>
-            <textarea
-              ref={textareaRef}
-              value={commentText}
-              onChange={(e) => setCommentText(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Enter your comment..."
-              className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:border-transparent resize-none"
-              style={{
-                backgroundColor: 'var(--bg-input)',
-                borderColor: 'var(--border-default)',
-                color: 'var(--text-primary)'
-              }}
-              rows={3}
-            />
-            <p
-              className="text-xs mt-1"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              Press Ctrl+Enter to save, Esc to cancel
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleSaveComment}
-              disabled={!commentText.trim()}
-              className={cn(
-                'flex-1 px-3 py-2 rounded-md font-medium text-sm transition-colors',
-              )}
-              style={{
-                backgroundColor: commentText.trim() ? 'var(--accent-primary)' : 'var(--border-default)',
-                color: commentText.trim() ? 'var(--text-inverse)' : 'var(--text-muted)',
-                cursor: commentText.trim() ? 'pointer' : 'not-allowed'
-              }}
-              onMouseOver={(e) => {
-                if (commentText.trim()) {
-                  e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover)'
-                }
-              }}
-              onMouseOut={(e) => {
-                if (commentText.trim()) {
-                  e.currentTarget.style.backgroundColor = 'var(--accent-primary)'
-                }
-              }}
-            >
-              {editingCommentId ? 'Update' : 'Save'}
-            </button>
-            <button
-              onClick={handleCancelEdit}
-              className="px-3 py-2 rounded-md font-medium text-sm transition-colors"
-              style={{
-                backgroundColor: 'var(--bg-card-hover)',
-                color: 'var(--text-secondary)'
-              }}
-              onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--border-default)'}
-              onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-card-hover)'}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Submit Modal */}
       {showSubmitModal && (
