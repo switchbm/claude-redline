@@ -80,7 +80,7 @@ HTTP_PORT = 6380
 
 # Lifespan context manager - signals when server is actually ready
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Manage FastAPI application lifespan events."""
     # Startup: signal that server is ready to accept connections
     http_server_started.set()
