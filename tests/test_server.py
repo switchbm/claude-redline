@@ -1,6 +1,7 @@
 """Tests for the Redline MCP server."""
 
 import asyncio
+import time
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -44,6 +45,9 @@ def reset_app_state() -> None:
     app_state["theme"] = DEFAULT_THEME_NAME
     app_state["base_dir"] = None
     app_state["diff_data"] = {}
+    app_state["pending_review"] = None
+    app_state["pending_review_time"] = None
+    app_state["http_port"] = None
 
 
 class TestThemes:
@@ -225,6 +229,9 @@ class TestMCPTools:
         self, mock_start_server: MagicMock, mock_browser: MagicMock
     ) -> None:
         """Test calling the request_human_review tool."""
+        # Mock returns a dynamic port
+        mock_start_server.return_value = 54321
+
         markdown_spec = "# Test Document\nThis is a test."
         context = "Please review this"
 
@@ -268,8 +275,8 @@ class TestMCPTools:
         assert "comments" in result[0].text
         assert "Approved" in result[0].text
 
-        # Verify browser was opened
-        mock_browser.assert_called_once_with("http://localhost:6380")
+        # Verify browser was opened with dynamic port
+        mock_browser.assert_called_once_with("http://localhost:54321")
 
         # Verify server start was called
         mock_start_server.assert_called_once()
@@ -348,6 +355,9 @@ class TestEdgeCases:
         assert "future" in app_state
         assert "base_dir" in app_state
         assert "diff_data" in app_state
+        assert "pending_review" in app_state
+        assert "pending_review_time" in app_state
+        assert "http_port" in app_state
         assert isinstance(app_state["content"], str)
 
 
@@ -721,6 +731,86 @@ class TestMCPToolsWithBaseDir:
 
         # Verify diff_data was set
         assert app_state["diff_data"] == {"test.py": {"added_lines": [1], "removed_lines": []}}
+
+        # Clean up
+        future = app_state.get("future")
+        if future and not future.done():
+            future.set_result({"comments": [], "user_overall_comment": "LGTM"})
+        await task
+
+
+class TestPendingReview:
+    """Tests for pending review functionality (interrupted tool call recovery)."""
+
+    def test_submit_stores_pending_review(self, client: TestClient) -> None:
+        """Test that submit_review stores the review as pending."""
+        payload = {"comments": [], "user_overall_comment": "Test review"}
+        response = client.post("/api/submit", json=payload)
+        assert response.status_code == 200
+
+        # Check pending review was stored
+        assert app_state["pending_review"] == payload
+        assert app_state["pending_review_time"] is not None
+        assert time.time() - app_state["pending_review_time"] < 1  # Within last second
+
+    @patch("redline.server.webbrowser.open")
+    @patch("redline.server.start_http_server_if_needed")
+    async def test_call_tool_returns_pending_review(
+        self, mock_start_server: MagicMock, mock_browser: MagicMock
+    ) -> None:
+        """Test that call_tool returns a recent pending review immediately."""
+        pending_data = {
+            "comments": [{"id": "1", "quote": "test", "user_comment": "pending"}],
+            "user_overall_comment": "From pending",
+        }
+        app_state["pending_review"] = pending_data
+        app_state["pending_review_time"] = time.time()  # Just now
+
+        result = await call_tool(
+            "request_human_review",
+            {"markdown_spec": "# New Doc", "context": "New review"},
+        )
+
+        # Should return the pending review without waiting
+        assert len(result) == 1
+        assert "From pending" in result[0].text
+        assert "pending" in result[0].text
+
+        # Pending review should be cleared
+        assert app_state["pending_review"] is None
+        assert app_state["pending_review_time"] is None
+
+        # Browser should NOT have been opened (returned immediately)
+        mock_browser.assert_not_called()
+
+    @patch("redline.server.webbrowser.open")
+    @patch("redline.server.start_http_server_if_needed")
+    async def test_call_tool_ignores_old_pending_review(
+        self, mock_start_server: MagicMock, mock_browser: MagicMock
+    ) -> None:
+        """Test that call_tool ignores pending reviews older than 5 minutes."""
+        old_data = {
+            "comments": [],
+            "user_overall_comment": "Old review",
+        }
+        app_state["pending_review"] = old_data
+        app_state["pending_review_time"] = time.time() - 400  # 6+ minutes ago
+
+        async def run_tool() -> Any:
+            return await call_tool(
+                "request_human_review",
+                {"markdown_spec": "# Test", "context": "test"},
+            )
+
+        task = asyncio.create_task(run_tool())
+        await asyncio.sleep(0.05)
+
+        # Should have cleared old pending and started new review
+        assert app_state["pending_review"] is None
+        assert app_state["pending_review_time"] is None
+
+        # Browser should have been opened (did not return immediately)
+        mock_browser.assert_called_once()
 
         # Clean up
         future = app_state.get("future")

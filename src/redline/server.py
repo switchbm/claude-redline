@@ -5,7 +5,7 @@ This module implements an MCP (Model Context Protocol) server that enables
 AI agents like Claude to request human feedback during execution. When the
 `request_human_review` tool is called:
 
-1. The server starts a local HTTP server (FastAPI + Uvicorn) on port 6380
+1. The server starts a local HTTP server (FastAPI + Uvicorn) on a dynamic port
 2. A browser window opens with a React-based review interface
 3. The user can highlight text and add inline comments
 4. Feedback is returned as structured JSON to the AI agent
@@ -17,6 +17,9 @@ Architecture:
 
 The threading model ensures the MCP connection stays alive during potentially
 long user review sessions while the browser UI remains responsive.
+
+Dynamic port allocation allows multiple Claude Code instances to run
+simultaneously without port conflicts.
 
 Example:
     Configure in Claude Code:
@@ -36,6 +39,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -73,10 +77,31 @@ app_state: dict[str, Any] = {
     "theme": DEFAULT_THEME_NAME,
     "base_dir": None,  # Working directory for file resolution
     "diff_data": {},  # Git diff data: {file_path: {added_lines: [], removed_lines: []}}
+    "pending_review": None,  # Stores submitted review if tool call was interrupted
+    "pending_review_time": None,  # Timestamp of pending review
+    "http_port": None,  # Dynamically assigned HTTP server port
 }
 
-# Port configuration
-HTTP_PORT = 6380
+# Port configuration - now dynamic to support multiple instances
+DEFAULT_PORT = 6380  # Fallback if dynamic allocation fails
+
+
+def _find_free_port() -> int:
+    """Find an available port for the HTTP server.
+
+    Uses the OS to allocate a free port by binding to port 0,
+    then immediately closing the socket and returning the assigned port.
+
+    Returns:
+        An available port number.
+    """
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+    return port
+
 
 # Lifespan context manager - signals when server is actually ready
 @asynccontextmanager
@@ -324,6 +349,9 @@ async def submit_review(data: dict[str, Any]) -> JSONResponse:
     This endpoint receives the user's feedback from the React UI and resolves
     the asyncio.Future that the `request_human_review` tool is awaiting.
 
+    If the tool call was interrupted, the review is stored as pending and can
+    be retrieved on the next tool invocation.
+
     Args:
         data: Review payload containing:
             - comments: List of inline comments with quote, text, timestamp
@@ -346,6 +374,10 @@ async def submit_review(data: dict[str, Any]) -> JSONResponse:
         )
     else:
         logger.info(f"Review submitted with {num_comments} inline comments")
+
+    # Always store the review as pending (in case tool call is interrupted)
+    app_state["pending_review"] = data
+    app_state["pending_review_time"] = time.time()
 
     # Resolve the future with the submitted data (thread-safe)
     future = app_state.get("future")
@@ -378,15 +410,16 @@ http_server_started = threading.Event()
 def run_http_server() -> None:
     """Run the FastAPI/Uvicorn HTTP server in a daemon thread.
 
-    Binds to 127.0.0.1:6380 (localhost only for security).
+    Binds to 127.0.0.1 on the dynamically allocated port (localhost only for security).
     Sets the http_server_started event when ready to accept connections.
     """
+    port = app_state.get("http_port", DEFAULT_PORT)
     try:
-        logger.info(f"Starting HTTP server on port {HTTP_PORT}")
+        logger.info(f"Starting HTTP server on port {port}")
         config = uvicorn.Config(
             app,
             host="127.0.0.1",
-            port=HTTP_PORT,
+            port=port,
             log_level="info",
             access_log=False,
         )
@@ -397,22 +430,32 @@ def run_http_server() -> None:
         logger.error(f"HTTP server error: {e}")
 
 
-def start_http_server_if_needed() -> None:
+def start_http_server_if_needed() -> int:
     """Start the HTTP server in a background thread if not already running.
 
     Creates a daemon thread so the server automatically stops when the
     main process exits. Waits up to 5 seconds for the server to be ready.
+    Allocates a dynamic port to support multiple concurrent instances.
+
+    Returns:
+        The port number the HTTP server is running on.
     """
     global http_server_thread
 
     if http_server_thread is None or not http_server_thread.is_alive():
+        # Allocate a free port for this instance
+        port = _find_free_port()
+        app_state["http_port"] = port
+
         http_server_thread = threading.Thread(
             target=run_http_server, daemon=True, name="HTTPServerThread"
         )
         http_server_thread.start()
         # Wait for server to start
         http_server_started.wait(timeout=5)
-        logger.info("HTTP server thread started")
+        logger.info(f"HTTP server thread started on port {port}")
+
+    return app_state.get("http_port", DEFAULT_PORT)
 
 
 # MCP Server
@@ -507,16 +550,18 @@ async def list_tools() -> list[Tool]:
     ]
 
 
+# Time window (in seconds) to consider a pending review as valid
+PENDING_REVIEW_WINDOW = 5 * 60  # 5 minutes
+
+
 @mcp_server.call_tool()
 async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     """Handle MCP tool invocations from Claude.
 
     For `request_human_review`:
-    1. Stores the markdown content in global state
-    2. Creates an asyncio.Future to block until user submits
-    3. Starts HTTP server and opens browser
-    4. Waits for user to submit review
-    5. Returns the feedback as JSON
+    1. Checks for pending review from interrupted tool call
+    2. If no pending review, stores markdown and waits for user submission
+    3. Returns the feedback as JSON
 
     Args:
         name: Tool name (must be "request_human_review")
@@ -539,6 +584,22 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     logger.info(f"Context: {context}")
     logger.info(f"Base directory: {base_dir}")
 
+    # Check for pending review from interrupted tool call
+    pending_review = app_state.get("pending_review")
+    pending_time = app_state.get("pending_review_time")
+    if pending_review and pending_time:
+        age = time.time() - pending_time
+        if age < PENDING_REVIEW_WINDOW:
+            logger.info(f"Found pending review from {age:.1f}s ago, returning it")
+            # Clear the pending review
+            app_state["pending_review"] = None
+            app_state["pending_review_time"] = None
+            return [TextContent(type="text", text=json.dumps(pending_review, indent=2))]
+        else:
+            logger.info(f"Pending review is too old ({age:.1f}s), ignoring")
+            app_state["pending_review"] = None
+            app_state["pending_review_time"] = None
+
     # Update global state with new content and base_dir
     app_state["content"] = markdown_spec
     app_state["base_dir"] = base_dir
@@ -553,11 +614,11 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     app_state["future"] = future
     app_state["loop"] = loop  # Store loop for thread-safe resolution
 
-    # Start HTTP server if not running
-    start_http_server_if_needed()
+    # Start HTTP server if not running (returns the allocated port)
+    port = start_http_server_if_needed()
 
     # Open browser to the review interface
-    url = f"http://localhost:{HTTP_PORT}"
+    url = f"http://localhost:{port}"
     logger.info(f"Opening browser to {url}")
     try:
         webbrowser.open(url)
