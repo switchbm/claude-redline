@@ -99,7 +99,7 @@ def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         s.listen(1)
-        port = s.getsockname()[1]
+        port: int = s.getsockname()[1]
     return port
 
 
@@ -455,7 +455,7 @@ def start_http_server_if_needed() -> int:
         http_server_started.wait(timeout=5)
         logger.info(f"HTTP server thread started on port {port}")
 
-    return app_state.get("http_port", DEFAULT_PORT)
+    return int(app_state.get("http_port", DEFAULT_PORT))
 
 
 # MCP Server
