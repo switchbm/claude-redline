@@ -216,7 +216,7 @@ class TestMCPTools:
         tools = await list_tools()
         assert len(tools) == 1
         assert tools[0].name == "request_human_review"
-        assert "REQUIRED" in tools[0].description
+        assert "Redline Review Tool" in tools[0].description
         assert "markdown_spec" in tools[0].inputSchema["properties"]
 
     @patch("redline.server.webbrowser.open")
