@@ -2,10 +2,11 @@ import { useState, useEffect, useRef, useCallback, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import remarkGfm from 'remark-gfm'
-import { CheckCircle, MessageSquare, X, Send, Edit2, FileText, GripVertical, Code, FileCode } from 'lucide-react'
+import { CheckCircle, MessageSquare, X, Send, Edit2, FileText, GripVertical, Code, FileCode, Download } from 'lucide-react'
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { CodeViewer } from './components/CodeViewer'
+import { generateExportHtml, downloadHtml } from './utils/exportHtml'
 
 // Utility function for merging class names
 function cn(...inputs: (string | undefined | null | false)[]) {
@@ -85,11 +86,14 @@ function CodeRefButton({ filePath, lineNumber, lineEnd, onClick }: CodeRefButton
       style={{
         backgroundColor: 'var(--accent-primary)',
         color: 'var(--text-inverse)',
+        maxWidth: '100%',
+        wordBreak: 'break-all',
+        textAlign: 'left',
       }}
       title={`View ${filePath}${lineDisplay}`}
     >
-      <Code className="w-3 h-3" />
-      {filePath}{lineDisplay}
+      <Code className="w-3 h-3 flex-shrink-0" />
+      <span style={{ overflowWrap: 'anywhere' }}>{filePath}{lineDisplay}</span>
     </button>
   )
 }
@@ -159,6 +163,9 @@ function App() {
   const [diffData, setDiffData] = useState<Record<string, DiffData>>({})
   const [splitPosition, setSplitPosition] = useState(60) // percentage
   const [isDragging, setIsDragging] = useState(false)
+
+  // Export state
+  const [isExporting, setIsExporting] = useState(false)
 
   const popoverRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -636,6 +643,26 @@ function App() {
     setSelectedCodeRef(null)
   }
 
+  // Handle export to HTML
+  const handleExport = async () => {
+    if (isExporting) return
+
+    setIsExporting(true)
+    try {
+      const html = await generateExportHtml({
+        content,
+        title: 'Document Review Export',
+        diffData,
+      })
+      const timestamp = new Date().toISOString().slice(0, 10)
+      downloadHtml(html, `review-export-${timestamp}.html`)
+    } catch (error) {
+      console.error('Export failed:', error)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   // Calculate stacked positions for ALL comments (document + code) to avoid overlap
   const getStackedPositions = useCallback((): { doc: Record<string, number>, code: Record<string, number> } => {
     const COMMENT_HEIGHT = 120 // Approximate height of a comment card
@@ -799,6 +826,21 @@ function App() {
                 <MessageSquare className="w-4 h-4" />
                 <span>{comments.length} {comments.length === 1 ? 'comment' : 'comments'}</span>
               </div>
+              <button
+                onClick={handleExport}
+                disabled={isExporting}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+                style={{
+                  backgroundColor: 'var(--bg-card-hover)',
+                  color: 'var(--text-secondary)',
+                  opacity: isExporting ? 0.6 : 1,
+                  cursor: isExporting ? 'wait' : 'pointer'
+                }}
+                title="Download as HTML"
+              >
+                <Download className={`w-4 h-4 ${isExporting ? 'animate-pulse' : ''}`} />
+                {isExporting ? 'Exporting...' : 'Export'}
+              </button>
               <button
                 onClick={handleSubmit}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors"

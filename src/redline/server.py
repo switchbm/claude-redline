@@ -37,6 +37,8 @@ import subprocess
 import sys
 import threading
 import webbrowser
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -76,8 +78,20 @@ app_state: dict[str, Any] = {
 # Port configuration
 HTTP_PORT = 6380
 
+# Lifespan context manager - signals when server is actually ready
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Manage FastAPI application lifespan events."""
+    # Startup: signal that server is ready to accept connections
+    http_server_started.set()
+    logger.info("HTTP server is now accepting connections")
+    yield
+    # Shutdown: cleanup if needed
+    logger.info("HTTP server shutting down")
+
+
 # FastAPI application
-app = FastAPI(title="Redline Review Server")
+app = FastAPI(title="Redline Review Server", lifespan=lifespan)
 
 # Enable CORS for development
 app.add_middleware(
@@ -377,7 +391,7 @@ def run_http_server() -> None:
             access_log=False,
         )
         server = uvicorn.Server(config)
-        http_server_started.set()
+        # Note: http_server_started is set by the FastAPI startup event
         server.run()
     except Exception as e:
         logger.error(f"HTTP server error: {e}")
