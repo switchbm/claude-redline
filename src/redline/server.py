@@ -96,6 +96,7 @@ def _find_free_port() -> int:
         An available port number.
     """
     import socket
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         s.listen(1)
@@ -154,10 +155,12 @@ async def get_config() -> JSONResponse:
     """
     theme_name = app_state.get("theme", DEFAULT_THEME_NAME)
     theme = get_theme(theme_name)
-    return JSONResponse({
-        "theme": theme,
-        "available_themes": list_themes(),
-    })
+    return JSONResponse(
+        {
+            "theme": theme,
+            "available_themes": list_themes(),
+        }
+    )
 
 
 @app.get("/api/file")
@@ -189,8 +192,7 @@ async def get_file(path: str) -> JSONResponse:
         base_path = Path(base_dir).resolve()
         if not str(file_path).startswith(str(base_path)):
             return JSONResponse(
-                {"error": "Access denied: path outside base directory"},
-                status_code=403
+                {"error": "Access denied: path outside base directory"}, status_code=403
             )
     except Exception as e:
         return JSONResponse({"error": f"Invalid path: {e}"}, status_code=400)
@@ -243,13 +245,15 @@ async def get_file(path: str) -> JSONResponse:
         except ValueError:
             rel_path = file_path
 
-        return JSONResponse({
-            "content": content,
-            "language": language,
-            "lines": lines,
-            "path": str(rel_path),
-            "absolute_path": str(file_path),
-        })
+        return JSONResponse(
+            {
+                "content": content,
+                "language": language,
+                "lines": lines,
+                "path": str(rel_path),
+                "absolute_path": str(file_path),
+            }
+        )
     except UnicodeDecodeError:
         return JSONResponse({"error": "Binary file cannot be displayed"}, status_code=400)
     except Exception as e:
@@ -286,11 +290,7 @@ def parse_git_diff(base_dir: str) -> dict[str, dict[str, list[int]]]:
     try:
         # Get the diff output
         result = subprocess.run(
-            ["git", "diff", "HEAD"],
-            cwd=base_dir,
-            capture_output=True,
-            text=True,
-            timeout=30
+            ["git", "diff", "HEAD"], cwd=base_dir, capture_output=True, text=True, timeout=30
         )
 
         if result.returncode != 0:
@@ -481,12 +481,13 @@ async def list_tools() -> list[Tool]:
                 "feedback on implementations. Present your findings so the user can highlight concerns and add comments "
                 "on specific sections.\n\n"
                 "2. **Technical Analysis Deliverables** - When providing substantive technical analysis (architectural "
-                "review, performance analysis, security audit, trade-off analysis) that exceeds 300 words or contains "
+                "review, performance analysis, security audit, trade-off analysis) that exceeds 200 words or contains "
                 "multiple distinct findings.\n\n"
                 "3. **Implementation Plans** - Before implementing complex changes, present the plan for approval. User "
                 "can mark sections as approved, needs-revision, or add clarifying questions.\n\n"
-                "4. **Phase Completion Summaries** - After completing a significant phase of work, present a walkthrough "
-                "of what was done for review and sign-off.\n\n"
+                "4. **Phase Completion Summaries** - After completing a significant phase of work (especially when "
+                "marking 3+ todos as completed), present a walkthrough of what was done for review and sign-off. "
+                "This allows users to review all changes in one structured document with clickable code references.\n\n"
                 "5. **Recommendations with Options** - When presenting multiple approaches or recommendations where the "
                 "user needs to make decisions. They can annotate preferences directly on each option.\n\n"
                 "6. **Explicit Requests** - When user asks for a 'redline', 'redline document', 'review document', "
@@ -495,21 +496,29 @@ async def list_tools() -> list[Tool]:
                 "- Simple Q&A responses\n"
                 "- Short clarifications or explanations\n"
                 "- Status updates under 200 words\n"
+                "- Single, straightforward task completions\n"
                 "- When user explicitly asks for inline/chat response\n\n"
+                "## DEFAULT MINDSET\n\n"
+                "**When in doubt, use redline.** It's better to provide interactive review capability for substantial "
+                "content than to present it as plain text. Users can always read it linearly if they prefer, but redline "
+                "gives them the option to highlight sections, add contextual comments, and click through to code. "
+                "Redline makes technical content more actionable.\n\n"
                 "## FORMATTING BEST PRACTICES\n\n"
                 "Structure your markdown for easy annotation:\n"
                 "- Use clear **## Section Headers** so users can comment on specific sections\n"
                 "- Use **numbered lists** for recommendations/findings (easier to reference: 'I disagree with point 3')\n"
                 "- Use **tables** for comparisons and trade-offs\n"
-                "- Include **code references** using `[[file:path/to/file.py:42]]` format for clickable links\n"
+                "- Include **code references** using `[[file:path/to/file.py:42]]` or `[[file:path/to/file.py:42-50]]` "
+                "format for clickable links to specific lines or ranges\n"
                 "- Keep paragraphs focused on single topics (one concern = one paragraph)\n"
                 "- Use `> blockquotes` for key findings or warnings that deserve attention\n\n"
                 "## CONTEXT PARAMETER\n\n"
-                "Use the `context` parameter to help the user understand what they're reviewing:\n"
-                "- 'PR #1234: Semantic Table Analysis Implementation Review'\n"
-                "- 'Implementation Plan: Authentication Refactor'\n"
-                "- 'Phase 2 Complete: API Integration Summary'\n"
-                "- 'Architecture Decision: Cache Strategy Options'\n\n"
+                "Always provide a clear context string describing what the user is reviewing:\n"
+                "- ✅ 'Phase 2 Complete: API Integration Summary'\n"
+                "- ✅ 'PR #1234: Authentication Refactor Review'\n"
+                "- ✅ 'Implementation Plan: Cache Strategy Options'\n"
+                "- ❌ 'Review' (too vague)\n"
+                "- ❌ 'Summary' (lacks specificity)\n\n"
                 "## EXAMPLE TRIGGER SCENARIOS\n\n"
                 "| User Request | Action |\n"
                 "|--------------|--------|\n"
@@ -533,19 +542,19 @@ async def list_tools() -> list[Tool]:
                             "- [[file:src/auth.py:42-50]] - links to lines 42-50\n"
                             "- [[file:README.md]] - links to entire file\n"
                             "These become clickable buttons that open a code viewer panel."
-                        )
+                        ),
                     },
                     "context": {
                         "type": "string",
-                        "description": "What to review. Examples: 'Implementation plan for feature X', 'Phase 1 completion summary', 'Architecture decision'"
+                        "description": "What to review. Examples: 'Implementation plan for feature X', 'Phase 1 completion summary', 'Architecture decision'",
                     },
                     "base_dir": {
                         "type": "string",
-                        "description": "Base directory for resolving file references. Defaults to current working directory."
-                    }
+                        "description": "Base directory for resolving file references. Defaults to current working directory.",
+                    },
                 },
-                "required": ["markdown_spec"]
-            }
+                "required": ["markdown_spec"],
+            },
         )
     ]
 
@@ -633,14 +642,19 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         result = await asyncio.wait_for(future, timeout=REVIEW_TIMEOUT_SECONDS)
     except TimeoutError:
         logger.error("Review timed out after 20 minutes")
-        return [TextContent(
-            type="text",
-            text=json.dumps({
-                "error": "Review timed out",
-                "message": "The review window was open for 20 minutes without a submission. "
-                           "Please try again and submit your review when ready."
-            }, indent=2)
-        )]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "error": "Review timed out",
+                        "message": "The review window was open for 20 minutes without a submission. "
+                        "Please try again and submit your review when ready.",
+                    },
+                    indent=2,
+                ),
+            )
+        ]
 
     logger.info("Review received!")
 
@@ -657,9 +671,7 @@ async def async_main() -> None:
     logger.info("Starting Redline MCP Server")
 
     async with stdio_server() as (read_stream, write_stream):
-        await mcp_server.run(
-            read_stream, write_stream, mcp_server.create_initialization_options()
-        )
+        await mcp_server.run(read_stream, write_stream, mcp_server.create_initialization_options())
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
