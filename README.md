@@ -100,6 +100,22 @@ Start a new Claude Code session and run `/mcp` to verify Redline shows as "conne
   redline: connected
 ```
 
+**Auto-Allow Without Permission Prompts (Optional)**
+
+By default, Claude Code will ask for permission each time Redline is used. To allow it automatically, add it to your `~/.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__redline__request_human_review"
+    ]
+  }
+}
+```
+
+Or if you have existing settings, just add the tool to the `permissions.allow` array.
+
 ---
 
 ### Local Development Setup

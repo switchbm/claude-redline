@@ -61,6 +61,7 @@ body {
 .prose {
   color: var(--text-primary);
   max-width: none;
+  font-size: 13px;
 }
 
 .prose h1 {
@@ -94,6 +95,8 @@ body {
 .prose code {
   @apply px-1 py-0.5 rounded text-xs font-mono;
   background-color: var(--bg-code);
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .prose pre {

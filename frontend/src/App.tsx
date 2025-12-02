@@ -869,10 +869,10 @@ function App() {
             transition: isDragging ? 'none' : 'width 0.2s ease'
           }}
         >
-          <div className="max-w-4xl mx-auto px-6 py-8">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="max-w-6xl mx-auto px-6 py-8">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
               {/* Markdown Content */}
-              <div className="lg:col-span-2">
+              <div className="lg:col-span-3">
                 <div
                   ref={markdownContainerRef}
                   className="rounded-lg p-8 prose prose-lg max-w-none relative"
