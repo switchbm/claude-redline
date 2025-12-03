@@ -287,9 +287,11 @@ The `timeout` value is in milliseconds (1200000 = 20 minutes).
 <summary><strong>Browser Doesn't Open</strong></summary>
 
 If the browser doesn't open automatically:
-1. Manually navigate to `http://localhost:6380`
-2. Check that port 6380 isn't blocked by a firewall
+1. Check the terminal/console output for a log message like "Opening browser to http://localhost:XXXXX" to find the dynamically-assigned port number
+2. Manually navigate to that URL in your browser
 3. Ensure you have a default browser configured
+
+**Note**: Redline uses dynamic port allocation, so each instance runs on a different port to support multiple concurrent Claude Code sessions.
 </details>
 
 <details>
@@ -332,9 +334,10 @@ If the browser doesn't open automatically:
 
 **Technical Details:**
 - MCP server communicates via stdio with Claude
-- FastAPI HTTP server runs on `localhost:6380`
+- FastAPI HTTP server runs on a dynamically-allocated localhost port
 - React frontend renders markdown and captures feedback
 - Feedback returns as structured JSON
+- Dynamic port allocation supports multiple concurrent Claude Code instances
 
 ---
 
@@ -459,8 +462,9 @@ python build_ui.py
 ## Roadmap
 
 - [x] Customizable UI themes
-- [ ] Custom port configuration
-- [ ] Multiple concurrent reviews
+- [x] Dynamic port allocation (supports multiple concurrent instances)
+- [ ] User-specified port configuration
+- [ ] Multiple reviews in a single browser window
 - [ ] Review history persistence
 - [ ] VS Code extension
 - [ ] Custom review templates
