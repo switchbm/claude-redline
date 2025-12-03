@@ -67,6 +67,34 @@ Claude: → Continues to Phase 2...
 
 ## Quick Start
 
+### Prerequisites
+
+Before installing Redline, you'll need **[uv](https://docs.astral.sh/uv/)** (Python's fast package manager):
+
+**macOS/Linux:**
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+**Alternative (via pip):**
+```bash
+pip install uv
+```
+
+Verify installation:
+```bash
+uv --version
+```
+
+> **Why uv?** Redline uses `uvx` to install and run from GitHub, which is faster and more reliable than traditional pip installs. The commands below require `uv` to be installed first.
+
+---
+
 ### Claude Code Setup
 
 **Option 1: Global Installation (Recommended)**

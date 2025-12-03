@@ -67,11 +67,37 @@
 
 ## Step-by-Step Integration
 
-### 1. Choose Installation Method
+### 1. Prerequisites
+
+Before configuring Redline, ensure you have **[uv](https://docs.astral.sh/uv/)** installed:
+
+**macOS/Linux:**
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+**Alternative (via pip):**
+```bash
+pip install uv
+```
+
+Verify installation:
+```bash
+uv --version
+```
+
+> **Note**: All installation methods below require `uv` to be installed first.
+
+### 2. Choose Installation Method
 
 **Option A: No Installation (uvx - Recommended)**
 
-No installation needed! Just configure Claude Desktop to use uvx.
+No installation needed! Just configure Claude Desktop to use uvx (requires `uv` installed).
 
 **Option B: Global Install**
 
