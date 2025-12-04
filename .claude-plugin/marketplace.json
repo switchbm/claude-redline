@@ -1,0 +1,21 @@
+{
+  "name": "redline-marketplace",
+  "metadata": {
+    "description": "Human-in-the-loop review tools for Claude Code"
+  },
+  "owner": {
+    "name": "switchbm",
+    "url": "https://github.com/switchbm"
+  },
+  "plugins": [
+    {
+      "name": "redline",
+      "source": "./",
+      "description": "Human-in-the-loop review interface - request structured feedback via browser UI",
+      "version": "0.1.0",
+      "keywords": ["review", "hitl", "human-in-the-loop", "feedback"],
+      "license": "MIT",
+      "repository": "https://github.com/switchbm/claude-redline"
+    }
+  ]
+}

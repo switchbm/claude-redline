@@ -81,21 +81,49 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-**Alternative (via pip):**
-```bash
-pip install uv
-```
-
-Verify installation:
-```bash
-uv --version
-```
-
-> **Why uv?** Redline uses `uvx` to install and run from GitHub, which is faster and more reliable than traditional pip installs. The commands below require `uv` to be installed first.
+Verify installation: `uv --version`
 
 ---
 
-### Claude Code Setup
+### Install as Plugin (Recommended)
+
+The easiest way to install Redline is as a Claude Code plugin:
+
+```bash
+# Add the marketplace
+/plugin marketplace add switchbm/claude-redline
+
+# Install the plugin
+/plugin install redline@redline-marketplace
+```
+
+This automatically configures the MCP server and adds the `/redline` slash command.
+
+**Verify installation:**
+```
+/mcp
+  redline: connected
+```
+
+**Auto-allow without permission prompts (optional):**
+
+Add to your `~/.claude/settings.json`:
+```json
+{
+  "permissions": {
+    "allow": ["mcp__redline__request_human_review"]
+  }
+}
+```
+
+---
+
+### Manual Installation
+
+<details>
+<summary><strong>Click to expand manual setup instructions</strong></summary>
+
+#### Claude Code Setup
 
 **Option 1: Global Installation (Recommended)**
 
@@ -105,12 +133,7 @@ This makes Redline available in ALL your Claude Code sessions:
 claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline"],"timeout":1200000}' -s user
 ```
 
-- The `-s user` flag adds it to your global config (`~/.claude/settings.json`)
-- The `timeout` is set to 20 minutes (1200000ms) to allow thorough document review
-
 **Option 2: Project-Specific Installation**
-
-This makes Redline available only in a specific project directory:
 
 ```bash
 # Run this from your project directory
@@ -119,34 +142,9 @@ claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","g
 
 This creates/updates `.mcp.json` in your project root.
 
-**Verify Installation**
-
-Start a new Claude Code session and run `/mcp` to verify Redline shows as "connected":
-
-```
-> /mcp
-  redline: connected
-```
-
-**Auto-Allow Without Permission Prompts (Optional)**
-
-By default, Claude Code will ask for permission each time Redline is used. To allow it automatically, add it to your `~/.claude/settings.json`:
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "mcp__redline__request_human_review"
-    ]
-  }
-}
-```
-
-Or if you have existing settings, just add the tool to the `permissions.allow` array.
-
 ---
 
-### Local Development Setup
+#### Local Development Setup
 
 If you're developing Redline locally or want to run from source:
 
@@ -250,6 +248,10 @@ Or in `.mcp.json`:
 ```bash
 uvx --from git+https://github.com/switchbm/claude-redline redline --list-themes
 ```
+
+</details>
+
+---
 
 ### Use It
 

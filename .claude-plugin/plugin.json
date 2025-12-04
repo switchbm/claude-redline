@@ -1,0 +1,8 @@
+{
+  "name": "redline",
+  "description": "Human-in-the-loop review interface for Claude Code - request structured feedback on plans, PRs, and implementations via browser UI",
+  "version": "0.1.0",
+  "author": {
+    "name": "switchbm"
+  }
+}
