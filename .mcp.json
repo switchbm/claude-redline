@@ -4,7 +4,7 @@
       "type": "stdio",
       "command": "uvx",
       "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline"],
-      "timeout": 1200000
+      "timeout": 3600000
     }
   }
 }
