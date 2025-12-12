@@ -130,14 +130,14 @@ Add to your `~/.claude/settings.json`:
 This makes Redline available in ALL your Claude Code sessions:
 
 ```bash
-claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline"],"timeout":1200000}' -s user
+claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline"],"timeout":86400000}' -s user
 ```
 
 **Option 2: Project-Specific Installation**
 
 ```bash
 # Run this from your project directory
-claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline"],"timeout":1200000}'
+claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline"],"timeout":86400000}'
 ```
 
 This creates/updates `.mcp.json` in your project root.
@@ -155,10 +155,10 @@ cd claude-redline
 uv sync --dev
 
 # Add to Claude Code (global)
-claude mcp add-json redline '{"type":"stdio","command":"uv","args":["run","--directory","/path/to/claude-redline","redline"],"timeout":1200000}' -s user
+claude mcp add-json redline '{"type":"stdio","command":"uv","args":["run","--directory","/path/to/claude-redline","redline"],"timeout":86400000}' -s user
 
 # Or project-specific (omit -s user)
-claude mcp add-json redline '{"type":"stdio","command":"uv","args":["run","--directory","/path/to/claude-redline","redline"],"timeout":1200000}'
+claude mcp add-json redline '{"type":"stdio","command":"uv","args":["run","--directory","/path/to/claude-redline","redline"],"timeout":86400000}'
 ```
 
 Replace `/path/to/claude-redline` with your actual clone path.
@@ -184,13 +184,13 @@ Add to your config file:
     "redline": {
       "command": "uvx",
       "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline"],
-      "timeout": 1200000
+      "timeout": 86400000
     }
   }
 }
 ```
 
-The `timeout` is set to 20 minutes (1200000ms) to allow thorough document review.
+The `timeout` is set to 24 hours (86400000ms) to allow unlimited time for thorough document review.
 </details>
 
 ### Choose a Theme (Optional)
@@ -210,7 +210,7 @@ Redline includes 6 built-in themes. Add `--theme <name>` to customize the look:
 <summary><strong>Example: Clean Theme with Claude Code</strong></summary>
 
 ```bash
-claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline","--theme","clean"],"timeout":1200000}' -s user
+claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline","--theme","clean"],"timeout":86400000}' -s user
 ```
 
 Or in `.mcp.json`:
@@ -221,7 +221,7 @@ Or in `.mcp.json`:
       "type": "stdio",
       "command": "uvx",
       "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline", "--theme", "clean"],
-      "timeout": 1200000
+      "timeout": 86400000
     }
   }
 }
@@ -237,7 +237,7 @@ Or in `.mcp.json`:
     "redline": {
       "command": "uvx",
       "args": ["--from", "git+https://github.com/switchbm/claude-redline", "redline", "--theme", "ocean"],
-      "timeout": 1200000
+      "timeout": 86400000
     }
   }
 }
@@ -264,7 +264,7 @@ plan for review first, then show me phase summaries as you complete them.
 
 That's it! Claude will automatically open your browser for reviews at the right moments.
 
-> **Note**: Redline has a 20-minute timeout for reviews. Take your time reviewing documents thoroughly - the browser will stay open until you click "Submit Review".
+> **Note**: Redline has no timeout - take as long as you need. The browser will stay open until you click "Submit Review".
 
 ---
 
@@ -275,14 +275,14 @@ That's it! Claude will automatically open your browser for reviews at the right 
 
 If you see "MCP error -32001: Request timed out", your MCP configuration may be missing the timeout setting.
 
-**Solution**: Re-add Redline with the 20-minute timeout (the setup commands above include this by default):
+**Solution**: Re-add Redline with a long timeout (the setup commands above include this by default):
 
 ```bash
 claude mcp remove redline
-claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline"],"timeout":1200000}' -s user
+claude mcp add-json redline '{"type":"stdio","command":"uvx","args":["--from","git+https://github.com/switchbm/claude-redline","redline"],"timeout":86400000}' -s user
 ```
 
-The `timeout` value is in milliseconds (1200000 = 20 minutes).
+The `timeout` value is in milliseconds (86400000 = 24 hours).
 </details>
 
 <details>

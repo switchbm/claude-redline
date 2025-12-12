@@ -634,27 +634,9 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     except Exception as e:
         logger.error(f"Failed to open browser: {e}")
 
-    # Wait for the user to submit their review (60 minute timeout)
-    # This generous timeout allows for thorough document review
-    REVIEW_TIMEOUT_SECONDS = 60 * 60  # 60 minutes (1 hour)
-    logger.info(f"Waiting for user review (timeout: {REVIEW_TIMEOUT_SECONDS // 60} minutes)...")
-    try:
-        result = await asyncio.wait_for(future, timeout=REVIEW_TIMEOUT_SECONDS)
-    except TimeoutError:
-        logger.error("Review timed out after 60 minutes")
-        return [
-            TextContent(
-                type="text",
-                text=json.dumps(
-                    {
-                        "error": "Review timed out",
-                        "message": "The review window was open for 60 minutes without a submission. "
-                        "Please try again and submit your review when ready.",
-                    },
-                    indent=2,
-                ),
-            )
-        ]
+    # Wait indefinitely for the user to submit their review (no timeout)
+    logger.info("Waiting for user review (no timeout - take as long as you need)...")
+    result = await future
 
     logger.info("Review received!")
 
